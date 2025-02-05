@@ -13,7 +13,7 @@ A 3rd party Javascript framework for monitoring and admining your Arma Reforger 
 
 <br>
 
-## **Configuring SquadJS**
+## **Configuring ReforgerJS**
 <details>
   <summary>Server</summary>
 
