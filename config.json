@@ -1,0 +1,92 @@
+{
+  "server": {
+    "id": 1,
+    "name": "SERVER NAME",
+    "host": "xxx.xxx.xxx.xxx",
+    "queryPort": 1111,
+    "rconPort": 1111,
+    "rconPassword": "PASSWORD",
+    "logDir": "CC:/path/to/reforger/log/folder"
+  },
+  "consoleLogLevel": "info",
+  "outputLogLevel": "info",
+  "connectors": {
+    "discord": {
+      "token": "",
+      "clientId":"",
+      "guildId": ""
+    },
+    "mysql": {
+      "enabled": false,
+      "host": "host",
+      "port": 3306,
+      "username": "reforgerjs",
+      "password": "password",
+      "database": "reforgerjs",
+      "dialect": "mysql"
+    }
+  },
+  "roles": {
+    "roleName": "discord RoleID",
+    "roleName1": "discord RoleID",
+    "roleName2": "discord RoleID",
+    "roleName3": "discord RoleID"
+  },
+  "roleLevels": {
+    "1": [
+      "roleName",
+      "roleName1"
+    ],
+    "2": [
+      "roleName2"
+    ],
+    "3": [
+      "roleName3"
+    ]
+  },
+  "commands": [
+    {
+      "command": "whois",
+      "enabled": false,
+      "commandLevel": 3
+    }
+  ],
+  "plugins": [
+    {
+      "plugin": "LogVoteKickVictim",
+      "enabled": false,
+      "channel": ""
+    },
+    {
+      "plugin": "LogVoteKickStart",
+      "enabled": false,
+      "channel": ""
+    },
+    {
+      "plugin": "DBLog",
+      "enabled": false,
+      "interval": 1
+    },
+    {
+      "plugin": "DBLogStats",
+      "enabled": true,
+      "interval": 5,
+      "path": "C:/path/to/saves/profile/.save/playersave",
+      "tableName": ""
+    },
+    {
+      "plugin": "SeedTrackerBasic",
+      "enabled": false,
+      "interval": 5,
+      "seedStart": 4,
+      "seedEnd": 40
+    },
+    {
+      "plugin": "AltChecker",
+      "enabled": false,
+      "channel": "",
+      "logAlts": true,
+      "logOnlyOnline": false
+    }
+  ]
+}
