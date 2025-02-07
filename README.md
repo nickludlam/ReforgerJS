@@ -153,5 +153,54 @@ Discord Slash Commands
   ---
 </details>
 
+<details>
+  <summary>Plugins</summary>
+
+## Plugin Configuration
+
+The `plugins` section in your config file lists all plugins built into ReforgerJS
+  ```json
+    "plugins": [
+      {
+        "plugin": "DBLog",
+        "disabled": false
+      }
+    ]
+  ```
+
+The `disabled` field can be toggled between `true`/ `false` to enabled/disable the plugin.
+
+Plugin options are also specified. A full list of plugin options can be seen below.
+When creating plugins, the name (Cap specific) must match the name in the plugin folder.
+
+  ---
+</details>
+
+<br>
+
+## **Plugins**
+The following is a list of plugins built into ReforgerJS, you can click their title for more information:
+
+<details>
+          <summary>DBLog</summary>
+          <h2>DBLog</h2>
+          <p>The <code>mysql-log</code> plugin will log various player statistics to a database.
+
+          Stats:
+          <ul><li>Player Name</li>
+          <li>IP address</li>
+          <li>Reforger UUID</li>
+          <li>Battle-eye GUID</li></ul></p>
+
+          <h3>Options</h3>
+          <ul><li><h4>Interval</h4>
+           <h6>Description</h6>
+           <p>Interval in minutes. How often the the plugin should check for updates/new players</p>
+           <h6>Default</h6>
+           <pre><code>1</code></pre></li>
+        </details>
+
+<br>
+
 ### Inspired by SquadJS - Team Silver Sphere
 https://github.com/Team-Silver-Sphere/SquadJS
