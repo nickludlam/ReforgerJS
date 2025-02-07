@@ -10,6 +10,23 @@ class LogVoteKickVictim {
         this.channelId = null;
     }
 
+    // Helper function to create a delay
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Retry mechanism to check if the bot has all required permissions
+    async checkPermissionsWithRetry(channel, user, requiredPermissions, retries = 3, delayMs = 1000) {
+        for (let i = 0; i < retries; i++) {
+            const perms = channel.permissionsFor(user);
+            if (perms && requiredPermissions.every(perm => perms.has(perm))) {
+                return true;
+            }
+            await this.delay(delayMs);
+        }
+        return false;
+    }
+
     async prepareToMount(serverInstance, discordClient) {
         logger.verbose(`[${this.name}] Preparing to mount...`);
         this.serverInstance = serverInstance;
@@ -37,7 +54,7 @@ class LogVoteKickVictim {
                 return;
             }
 
-            // Check if the target is a thread or a regular channel
+            // Check if the target is a thread or a regular text channel
             if (channelOrThread.isThread()) {
                 this.channelOrThread = channelOrThread;
             } else if (channelOrThread.isTextBased()) {
@@ -47,18 +64,23 @@ class LogVoteKickVictim {
                 return;
             }
 
-            // Ensure bot permissions
-            const permissions = this.channelOrThread.permissionsFor(this.discordClient.user);
-            if (!permissions) {
-                logger.error(`[${this.name}] Unable to determine bot permissions for the channel or thread.`);
-                return;
-            }
-
+            // Define required permissions
             const requiredPermissions = ['ViewChannel', 'SendMessages', 'EmbedLinks'];
-            const missingPermissions = requiredPermissions.filter(perm => !permissions.has(perm));
+            // Use the retry mechanism to check for permissions
+            const hasPermissions = await this.checkPermissionsWithRetry(
+                this.channelOrThread,
+                this.discordClient.user,
+                requiredPermissions
+            );
 
-            if (missingPermissions.length > 0) {
-                logger.error(`[${this.name}] Bot is missing the following permissions in the channel or thread: ${missingPermissions.join(', ')}.`);
+            if (!hasPermissions) {
+                const perms = this.channelOrThread.permissionsFor(this.discordClient.user);
+                if (!perms) {
+                    logger.error(`[${this.name}] Unable to determine bot permissions for the channel or thread.`);
+                } else {
+                    const missingPermissions = requiredPermissions.filter(perm => !perms.has(perm));
+                    logger.error(`[${this.name}] Bot is missing the following permissions in the channel or thread: ${missingPermissions.join(', ')}.`);
+                }
                 return;
             }
 

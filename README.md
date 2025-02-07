@@ -13,7 +13,8 @@ ReforgerJS relies on being able to access the Reforger server log directory in o
 2. Open the unzipped folder in your terminal.
 3. Install the dependencies by running `npm install` in your terminal.
 4. Configure the `config.json` file. See below for more details.
-5. Start ReforgerJS by running `node index.js` in your terminal.
+5. Once you have enabled the commands you wish to run. Before running the bot, Run the command loader `node deploy-commands.js`
+6. Start ReforgerJS by running `node index.js` in your terminal.
 
 <br>
 

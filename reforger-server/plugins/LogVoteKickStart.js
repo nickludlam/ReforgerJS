@@ -10,6 +10,24 @@ class LogVoteKickStart {
         this.channelId = null;
     }
 
+    // Helper method to delay execution
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Retry mechanism to check permissions for the bot user
+    async checkPermissionsWithRetry(channel, user, permission, retries = 3, delayMs = 1000) {
+        for (let i = 0; i < retries; i++) {
+            const perms = channel.permissionsFor(user);
+            if (perms && perms.has(permission)) {
+                return true;
+            }
+            // Wait a moment before retrying
+            await this.delay(delayMs);
+        }
+        return false;
+    }
+
     async prepareToMount(serverInstance, discordClient) {
         logger.verbose(`[${this.name}] Preparing to mount...`);
         this.serverInstance = serverInstance;
@@ -37,7 +55,7 @@ class LogVoteKickStart {
                 return;
             }
 
-            // Check if the target is a thread or a regular channel
+            // Check if the target is a thread or a regular text channel
             if (channelOrThread.isThread()) {
                 this.channelOrThread = channelOrThread;
             } else if (channelOrThread.isTextBased()) {
@@ -47,8 +65,14 @@ class LogVoteKickStart {
                 return;
             }
 
-            // Check if the bot has permission to send messages
-            if (!this.channelOrThread.permissionsFor(this.discordClient.user).has('SendMessages')) {
+            // Use the retry mechanism to check for the 'SendMessages' permission.
+            const canSend = await this.checkPermissionsWithRetry(
+                this.channelOrThread,
+                this.discordClient.user,
+                'SendMessages'
+            );
+
+            if (!canSend) {
                 logger.warn(`[${this.name}] Bot does not have permission to send messages in the channel or thread. Plugin disabled.`);
                 return;
             }
