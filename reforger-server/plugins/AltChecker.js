@@ -124,7 +124,7 @@ class AltChecker {
             { name: "Reforger BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
             { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
           )
-          .setFooter({ text: "AltChecker Plugin - ZSUGaming ReforgerJS" });
+          .setFooter({ text: "AltChecker Plugin - ReforgerJS" });
 
         try {
           await this.channelOrThread.send({ embeds: [embed] });

@@ -61,7 +61,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 color: 0xFFA500,
                 fields: [],
                 footer: {
-                    text: 'ZSUGaming ReforgerJS'
+                    text: 'ReforgerJS'
                 }
             };
 
@@ -86,7 +86,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                         color: 0xFFA500,
                         fields: [],
                         footer: {
-                            text: 'ZSUGaming ReforgerJS'
+                            text: 'ReforgerJS'
                         }
                     };
                 }
