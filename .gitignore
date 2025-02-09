@@ -137,5 +137,6 @@ prisma/migrations/migration_lock.toml
 configdev.json
 config copy.json
 test.js
+configDefault.json
 
 reforger-server/log-parser/logparser_state.json
