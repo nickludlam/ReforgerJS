@@ -2,6 +2,11 @@ const { EventEmitter } = require("events");
 const Rcon = require("./rcon");
 const LogParser = require("./log-parser/index");
 
+// Global values accessible from other parts of the code
+global.serverPlayerCount = 0;
+global.serverFPS = 0;
+global.serverMemoryUsage = 0;
+
 class ReforgerServer extends EventEmitter {
   constructor(config) {
     super();
@@ -273,6 +278,16 @@ class ReforgerServer extends EventEmitter {
           );
           this.emit("friendlyTeamKill", payload);
         }
+      });
+
+      this.logParser.on("serverHealth", (data) => {
+        global.serverFPS = data.fps;
+        global.serverMemoryUsage = data.memory;
+        global.serverPlayerCount = data.player;
+        const memoryMB = (global.serverMemoryUsage / 1024).toFixed(2);
+        logger.verbose(
+          `Server Health updated: FPS: ${global.serverFPS}, Memory: ${global.serverMemoryUsage} kB (${memoryMB} MB), Player Count: ${global.serverPlayerCount}`
+        );
       });
 
       this.logParser.start();

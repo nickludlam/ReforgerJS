@@ -5,6 +5,7 @@ const VoteKickStartHandler = require('./regexHandlers/voteKickStart');
 const VoteKickVictimHandler = require('./regexHandlers/voteKickVictim');
 const PlayerJoinedHandler = require('./regexHandlers/playerJoined');
 const PlayerUpdateHandler = require('./regexHandlers/playerUpdate');
+const ServerHealthHandler = require('./regexHandlers/serverHealth');
 
 class LogParser extends EventEmitter {
     constructor(config) {
@@ -23,6 +24,7 @@ class LogParser extends EventEmitter {
         this.voteKickVictimHandler = null;
         this.playerJoinedHandler = null;
         this.playerUpdateHandler = null;
+        this.serverHealthHandler = null;
     }
 
     setupRegexHandlers() {
@@ -33,6 +35,7 @@ class LogParser extends EventEmitter {
             this.voteKickVictimHandler = new VoteKickVictimHandler();
             this.playerJoinedHandler = new PlayerJoinedHandler();
             this.playerUpdateHandler = new PlayerUpdateHandler();
+            this.serverHealthHandler = new ServerHealthHandler();
 
             logger.verbose('Regex handlers initialized successfully.');
 
@@ -50,6 +53,10 @@ class LogParser extends EventEmitter {
 
             this.playerUpdateHandler.on('playerUpdate', data => {
                 this.emit('playerUpdate', data);
+            });
+
+            this.serverHealthHandler.on('serverHealth', data => {
+                this.emit('serverHealth', data);
             });
         } catch (error) {
             logger.error(`Error setting up regex handlers: ${error.message}`);
@@ -188,6 +195,10 @@ class LogParser extends EventEmitter {
 
         if (this.playerUpdateHandler) {
             this.playerUpdateHandler.processLine(line);
+        }
+
+        if (this.serverHealthHandler) {
+            this.serverHealthHandler.processLine(line);
         }
     }
 

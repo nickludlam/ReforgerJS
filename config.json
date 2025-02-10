@@ -13,12 +13,12 @@
   "connectors": {
     "discord": {
       "token": "",
-      "clientId":"",
+      "clientId": "",
       "guildId": ""
     },
     "mysql": {
       "enabled": false,
-      "host": "host",
+      "host": "mysql-host",
       "port": 3306,
       "username": "reforgerjs",
       "password": "password",
@@ -65,11 +65,11 @@
     {
       "plugin": "DBLog",
       "enabled": false,
-      "interval": 1
+      "interval": 5
     },
     {
       "plugin": "DBLogStats",
-      "enabled": true,
+      "enabled": false,
       "interval": 5,
       "path": "C:/path/to/saves/profile/.save/playersave",
       "tableName": ""
@@ -87,6 +87,23 @@
       "channel": "",
       "logAlts": true,
       "logOnlyOnline": false
+    },
+    {
+      "plugin": "ServerStatus",
+      "enabled": false,
+      "channel": "",
+      "messageID": "",
+      "interval": 1,
+      "showFPS": true,
+      "showMemoryUsage": false,
+      "discordBotStatus": true,
+      "embed": {
+          "title": "Arma Reforger Server Status",
+          "color": "#00FF00",
+          "footer": "ReforgerJS",
+          "thumbnail": false,
+          "thumbnailURL": "https://IMAGE_URL_HERE.png"
+      }
     }
   ]
 }

@@ -137,7 +137,7 @@ class Rcon extends EventEmitter {
   finalizePlayers() {
     this.mergePlayerLists(this.observedPlayers);
     // Verbose log of final player list
-    logger.verbose(`Final player list: ${JSON.stringify(this.players, null, 2)}`);
+    //logger.verbose(`Final player list: ${JSON.stringify(this.players, null, 2)}`);
 
     // Emit an event so that main.js or others can listen
     this.emit("players", this.players);
