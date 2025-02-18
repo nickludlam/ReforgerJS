@@ -11,6 +11,11 @@ class PlayerJoinedHandler extends EventEmitter {
         this.pendingJoins = new Map();
     }
 
+    // New test method to check if the line matches any expected format
+    test(line) {
+        return this.lineOneRegex.test(line) || this.lineThreeRegex.test(line);
+    }
+
     processLine(line) {
         // Match the first line
         const matchLineOne = this.lineOneRegex.exec(line);

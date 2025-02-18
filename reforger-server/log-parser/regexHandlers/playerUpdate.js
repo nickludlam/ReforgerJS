@@ -7,6 +7,10 @@ class PlayerUpdateHandler extends EventEmitter {
         this.regex = /(\d{2}:\d{2}:\d{2}\.\d{3})\s+NETWORK\s+:\s+### Updating player: PlayerId=(\d+), Name=([^,]+), IdentityId=([a-f0-9-]+)/;
     }
 
+    test(line) {
+        return this.regex.test(line);
+      }
+
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {

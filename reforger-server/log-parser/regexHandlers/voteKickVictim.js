@@ -10,7 +10,9 @@ class VoteKickVictimHandler extends EventEmitter {
         // Map to temporarily store kick events by identity
         this.pendingKicks = new Map();
     }
-
+    test(line) {
+        return this.identityLineRegex.test(line) || this.playerDisconnectRegex.test(line);
+      }
     processLine(line) {
         // Match the identity line (e.g., "Disconnecting identity=0x00000001: group=6 reason=1")
         const identityMatch = this.identityLineRegex.exec(line);

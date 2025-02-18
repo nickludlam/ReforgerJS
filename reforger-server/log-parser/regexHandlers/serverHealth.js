@@ -7,6 +7,9 @@ class ServerHealthHandler extends EventEmitter {
         this.regex = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+\S+\s+:\s+FPS:\s+([\d\.]+),.*?Mem:\s+(\d+)\s+kB,.*?Player:\s+(\d+),/;
     }
 
+    test(line) {
+        return this.regex.test(line);
+      }
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {

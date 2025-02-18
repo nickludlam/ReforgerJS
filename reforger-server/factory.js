@@ -71,11 +71,16 @@ async function performStartupChecks(config) {
   let discordClient = null; // Initialize to null
 
   // 1) Ensure the log directory exists
-  if (!fs.existsSync(config.server.logDir)) {
-    logger.error(`Log directory not found: ${config.server.logDir}`);
-    throw new Error(`Log directory not found: ${config.server.logDir}`);
+  // Only check local log directory if mode is 'tail'
+  if (config.server.logReaderMode === 'tail') {
+    if (!fs.existsSync(config.server.logDir)) {
+      logger.error(`Log directory not found: ${config.server.logDir}`);
+      throw new Error(`Log directory not found: ${config.server.logDir}`);
+    } else {
+      logger.info(`Log directory verified: ${config.server.logDir}`);
+    }
   } else {
-    logger.info(`Log directory verified: ${config.server.logDir}`);
+    logger.info(`Skipping local log directory check for mode: ${config.server.logReaderMode}`);
   }
 
 

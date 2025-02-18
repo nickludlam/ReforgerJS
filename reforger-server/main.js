@@ -83,7 +83,8 @@ class ReforgerServer extends EventEmitter {
 
   setupLogParser() {
     try {
-      this.logParser = new LogParser(this.config);
+      // Pass "console.log" as filename and the server config (which includes logDir)
+      this.logParser = new LogParser("console.log", this.config.server);
       if (!this.logParser) {
         logger.error("LogParser creation failed.");
         return;
@@ -95,41 +96,28 @@ class ReforgerServer extends EventEmitter {
 
       // Votekick Start event
       this.logParser.on("voteKickStart", (data) => {
-        //logger.verbose(`[voteKickStart event] Raw data: ${JSON.stringify(data)}`);
-
         if (this.rcon) {
-          // Convert incoming playerId to a number
           const playerId = parseInt(data.playerId, 10);
-
-          //logger.verbose(`[voteKickStart event] Current RCON players:\n${JSON.stringify( this.rcon.players, null,2)}`);
-
-          // Attempt to find the player by numeric ID
           const player = this.rcon.players.find((p) => p.id === playerId);
 
           if (player) {
             const name = player.name || player.uid;
-            //logger.verbose(`[voteKickStart event] Found player with ID=${playerId} => name=${player.name}, uid=${player.uid}`);
-
             if (name) {
               logger.info(`Votekick Started by ${name}`);
-              data.playerName = name; // attach to event data
+              data.playerName = name;
             } else {
-              logger.warn(
-                `Player found with ID ${playerId} but has no name or UID.`
-              );
+              logger.warn(`Player found with ID ${playerId} but has no name or UID.`);
             }
           } else {
             logger.warn(
               `[voteKickStart event] No matching player for ID ${playerId}. Adding to voteKickStartBuffer.`
             );
-            // Add to buffer for retrying
             this.voteKickStartBuffer.push(data);
             setTimeout(() => {
               this.processVoteKickStartBuffer();
             }, this.bufferTimeout);
           }
         }
-
         this.emit("voteKickStart", data);
       });
 
@@ -138,27 +126,22 @@ class ReforgerServer extends EventEmitter {
         const { playerName, group, reason } = data;
         let playerUID = null;
 
-        // Attempt to find the player by name
         const player = this.players.find((p) => p.name === playerName);
         if (player) {
           playerUID = player.uid || null;
           if (playerUID) {
-            logger.info(
-              `Player '${playerName}' (UID: ${playerUID}) has been vote kicked.`
-            );
+            logger.info(`Player '${playerName}' (UID: ${playerUID}) has been vote kicked.`);
           } else {
             logger.info(`Player '${playerName}' has been vote kicked.`);
           }
         } else {
           logger.info(`Player '${playerName}' has been vote kicked.`);
         }
-
         this.emit("voteKickVictim", { playerName, group, reason, playerUID });
       });
 
       this.logParser.on("playerJoined", (data) => {
         const { playerName, playerIP, playerNumber, beGUID } = data;
-
         if (this.rcon) {
           const existing = this.rcon.players.find((p) => p.name === playerName);
           if (existing) {
@@ -174,51 +157,34 @@ class ReforgerServer extends EventEmitter {
             this.rcon.players.push(newPlayer);
           }
         }
-
         this.emit("playerJoined", data);
       });
 
       this.logParser.on("playerUpdate", (data) => {
         if (this.rcon) {
-          const existing = this.rcon.players.find(
-            (p) => p.name === data.playerName
-          );
+          const existing = this.rcon.players.find((p) => p.name === data.playerName);
           if (existing) {
             let updated = false;
-
-            // Update ID if not present
             if (!existing.id && data.playerId) {
               existing.id = parseInt(data.playerId, 10);
               updated = true;
-              // logger.verbose(`Updated ID for player: #${existing.number} ${existing.name} - ID: ${existing.id}`);
             }
-
-            // Update UID if not present
             if (!existing.uid && data.playerUid) {
               existing.uid = data.playerUid;
               updated = true;
-              // logger.verbose(`Updated UID for player: #${existing.number} ${existing.name} - UID: ${existing.uid}`);
-            }
-
-            if (!updated) {
-              // logger.verbose(`No updates required for player: #${existing.number} ${existing.name}`);
             }
           } else {
             if (data.playerName && data.playerId && data.playerUid) {
-              // Store the new player's id as a number
               this.rcon.players.push({
                 name: data.playerName,
                 number: parseInt(data.playerId, 10),
                 id: parseInt(data.playerId, 10),
                 uid: data.playerUid,
-                ip: null, // IP might not be available during update
+                ip: null,
               });
-              // logger.verbose(`New player added via update: #${data.playerId} ${data.playerName} - UID: ${data.playerUid}, ID: ${data.playerId}`);
             } else {
               logger.warn(
-                `Incomplete playerUpdate data. Skipping. Data: ${JSON.stringify(
-                  data
-                )}`
+                `Incomplete playerUpdate data. Skipping. Data: ${JSON.stringify(data)}`
               );
             }
           }
@@ -226,24 +192,16 @@ class ReforgerServer extends EventEmitter {
         this.emit("playerUpdate", data);
       });
 
-      // *** playerKilled event handler ***
       this.logParser.on("playerKilled", (data) => {
-        // Log the incoming event data verbosely
-        logger.verbose(
-          `[playerKilled event] Received data: ${JSON.stringify(data)}`
-        );
+        logger.verbose(`[playerKilled event] Received data: ${JSON.stringify(data)}`);
 
-        // Check the players list for attacker and victim
         let attackerUID = "missing";
         let victimUID = "missing";
 
-        // If attackerName is "AI", set attackerUID to "AI"
         if (data.attackerName === "AI") {
           attackerUID = "AI";
         } else {
-          const attacker = this.players.find(
-            (p) => p.name === data.attackerName
-          );
+          const attacker = this.players.find((p) => p.name === data.attackerName);
           if (attacker) {
             attackerUID = attacker.uid || "missing";
           }
@@ -254,7 +212,6 @@ class ReforgerServer extends EventEmitter {
           victimUID = victim.uid || "missing";
         }
 
-        // Prepare the event payload
         const payload = {
           attackerUID,
           attackerName: data.attackerName,
@@ -264,17 +221,13 @@ class ReforgerServer extends EventEmitter {
         };
 
         logger.verbose(
-          `[playerKilled event] Emitting playerKilled with payload: ${JSON.stringify(
-            payload
-          )}`
+          `[playerKilled event] Emitting playerKilled with payload: ${JSON.stringify(payload)}`
         );
         this.emit("playerKilled", payload);
 
         if (data.friendlyFire) {
           logger.verbose(
-            `[playerKilled event] Emitting friendlyTeamKill with payload: ${JSON.stringify(
-              payload
-            )}`
+            `[playerKilled event] Emitting friendlyTeamKill with payload: ${JSON.stringify(payload)}`
           );
           this.emit("friendlyTeamKill", payload);
         }
@@ -290,7 +243,8 @@ class ReforgerServer extends EventEmitter {
         );
       });
 
-      this.logParser.start();
+      // Use watch() instead of start()
+      this.logParser.watch();
       logger.info("Log Parser setup complete.");
     } catch (error) {
       logger.error(`Failed to set up Log Parser: ${error.message}`);
@@ -308,17 +262,13 @@ class ReforgerServer extends EventEmitter {
   }
 
   processVoteKickStartBuffer() {
-    logger.verbose(
-      `Processing ${this.voteKickStartBuffer.length} buffered voteKick events.`
-    );
+    logger.verbose(`Processing ${this.voteKickStartBuffer.length} buffered voteKick events.`);
     const bufferCopy = [...this.voteKickStartBuffer];
-    this.voteKickStartBuffer = []; // Clear before processing
-
+    this.voteKickStartBuffer = [];
     bufferCopy.forEach((data) => {
       if (this.rcon) {
         const playerId = parseInt(data.playerId, 10);
         const player = this.rcon.players.find((p) => p.id === playerId);
-
         if (player) {
           const name = player.name || player.uid;
           if (name) {
@@ -326,15 +276,10 @@ class ReforgerServer extends EventEmitter {
               `Votekick Started by ${name} (from buffered event) [ID=${playerId}]`
             );
           } else {
-            logger.warn(
-              `Player found with ID ${playerId} but has no name or UID (buffered event).`
-            );
+            logger.warn(`Player found with ID ${playerId} but has no name or UID (buffered event).`);
           }
         } else {
-          logger.warn(
-            `Still no matching player found for playerID ${playerId} (buffered event).`
-          );
-          // Optionally re-buffer or handle accordingly
+          logger.warn(`Still no matching player found for playerID ${playerId} (buffered event).`);
         }
       }
       this.emit("voteKickStart", data);
@@ -348,30 +293,16 @@ class ReforgerServer extends EventEmitter {
     }
 
     this.reconnectAttempts += 1;
-    logger.warn(
-      `Attempting to reconnect to RCON. Attempt ${this.reconnectAttempts}...`
-    );
+    logger.warn(`Attempting to reconnect to RCON. Attempt ${this.reconnectAttempts}...`);
 
     try {
       this.restartRCON();
-      await new Promise((resolve) =>
-        setTimeout(resolve, this.currentReconnectDelay)
-      );
-      this.currentReconnectDelay = Math.min(
-        this.currentReconnectDelay * 2,
-        this.maxReconnectDelay
-      );
+      await new Promise((resolve) => setTimeout(resolve, this.currentReconnectDelay));
+      this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
     } catch (error) {
-      logger.error(
-        `Reconnection attempt ${this.reconnectAttempts} failed: ${error.message}`
-      );
-      await new Promise((resolve) =>
-        setTimeout(resolve, this.currentReconnectDelay)
-      );
-      this.currentReconnectDelay = Math.min(
-        this.currentReconnectDelay * 2,
-        this.maxReconnectDelay
-      );
+      logger.error(`Reconnection attempt ${this.reconnectAttempts} failed: ${error.message}`);
+      await new Promise((resolve) => setTimeout(resolve, this.currentReconnectDelay));
+      this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
     }
 
     this.attemptReconnection();
