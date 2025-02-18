@@ -48,7 +48,6 @@ class TailLogReader {
 
   findLatestLogFile() {
     try {
-      // Look for subdirectories starting with 'logs_'
       const entries = fs.readdirSync(this.logDir, { withFileTypes: true });
       const dirs = entries
         .filter(entry => entry.isDirectory() && entry.name.startsWith('logs_'))
@@ -60,14 +59,13 @@ class TailLogReader {
         if (fs.existsSync(potentialPath)) {
           if (this.currentLogPath !== potentialPath) {
             this.currentLogPath = potentialPath;
-            this.lastFileSize = 0; // reset if log file changed
+            this.lastFileSize = 0; 
           }
           return;
         } else {
           console.warn(`Log file not found in latest directory: ${potentialPath}`);
         }
       } else {
-        // Fallback: try using logDir/filename directly
         const directPath = path.join(this.logDir, this.filename);
         if (fs.existsSync(directPath)) {
           if (this.currentLogPath !== directPath) {
@@ -121,22 +119,17 @@ class TailLogReader {
   }
 
   watch() {
-    // Load saved state (if any)
     this.loadState();
-    // Identify the current log file
     this.findLatestLogFile();
     if (!this.currentLogPath) {
       console.error('No log file found to monitor.');
       return Promise.reject(new Error('No log file found to monitor.'));
     }
-    // Start periodic scanning
     this.scanIntervalID = setInterval(() => {
-      // Re-check for log file rotation
       this.findLatestLogFile();
       this.scanLogs();
     }, this.scanInterval);
 
-    // Periodically save state
     this.stateSaveID = setInterval(() => {
       this.saveState();
     }, this.stateSaveInterval);

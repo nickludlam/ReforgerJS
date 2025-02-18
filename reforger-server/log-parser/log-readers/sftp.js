@@ -4,7 +4,6 @@ const fs = require('fs');
 
 class SFTPLogReader {
   constructor(queueLine, options = {}) {
-    // Ensure required options: sftp credentials, logDir, and filename.
     ['sftp', 'logDir', 'filename'].forEach(option => {
       if (!options[option]) {
         throw new Error(`${option} must be specified.`);
@@ -21,7 +20,6 @@ class SFTPLogReader {
     this.initialized = false;
   }
 
-  // Find the latest remote log file.
   async findLatestRemoteLogFile() {
     const sftp = new SftpClient();
     try {
@@ -49,7 +47,6 @@ class SFTPLogReader {
     }
   }
 
-  // Get remote file size.
   async getRemoteFileSize(filePath) {
     const sftp = new SftpClient();
     try {
@@ -61,12 +58,11 @@ class SFTPLogReader {
     }
   }
 
-  // Backfill: download the entire file and process each line.
   async backfillFile(filePath) {
     const sftp = new SftpClient();
     try {
       await sftp.connect(this.options.sftp);
-      const data = await sftp.get(filePath); // Returns a Buffer.
+      const data = await sftp.get(filePath);
       const fileContent = data.toString("utf8");
       const lines = fileContent.split(/\r?\n/);
       for (const line of lines) {
@@ -80,7 +76,6 @@ class SFTPLogReader {
     }
   }
 
-  // Check for new log file periodically.
   async checkForNewLogFile() {
     try {
       const newPath = await this.findLatestRemoteLogFile();
@@ -102,7 +97,6 @@ class SFTPLogReader {
     const { SFTPTail } = await import('ftp-tail');
     this.currentFilePath = await this.findLatestRemoteLogFile();
 
-    // Define a dedicated error handler.
     const errorHandler = async (err) => {
       if (
         err.message &&
@@ -134,7 +128,6 @@ class SFTPLogReader {
             });
             this.reader.on('line', this.queueLine);
             this.reader.on('error', errorHandler);
-            // On reinitialization, do not backfill.
             await this.reader.watch(this.currentFilePath, { offset: offset });
             global.logger.info("Reinitialized SFTPTail successfully.");
           } catch (watchErr) {
@@ -146,7 +139,6 @@ class SFTPLogReader {
       }
     };
 
-    // Create a new tail instance.
     this.reader = new SFTPTail({
       sftp: this.options.sftp,
       fetchInterval: this.options.fetchInterval || 0,

@@ -4,7 +4,6 @@ const { Writable } = require("stream");
 
 class FTPLogReader {
   constructor(queueLine, options = {}) {
-    // Ensure required options: ftp credentials, logDir, and filename.
     ['ftp', 'logDir', 'filename'].forEach(option => {
       if (!options[option]) {
         throw new Error(`${option} must be specified.`);
@@ -18,10 +17,9 @@ class FTPLogReader {
     this.reader = null;
     this.currentFilePath = null;
     this.newLogCheckInterval = null;
-    this.initialized = false; // indicates if backfill has been done already
+    this.initialized = false;
   }
 
-  // Find the latest remote log file by scanning directories.
   async findLatestRemoteLogFile() {
     const client = new ftp.Client();
     client.ftp.verbose = false;
@@ -56,7 +54,6 @@ class FTPLogReader {
     }
   }
 
-  // Get the current file size from the remote server.
   async getRemoteFileSize(filePath) {
     const client = new ftp.Client();
     client.ftp.verbose = false;
@@ -75,7 +72,6 @@ class FTPLogReader {
     }
   }
 
-  // Backfill: download entire file and process each line.
   async backfillFile(filePath) {
     const client = new ftp.Client();
     client.ftp.verbose = false;
@@ -115,7 +111,6 @@ class FTPLogReader {
     }
   }
 
-  // Periodically check for a new log file.
   async checkForNewLogFile() {
     try {
       const newPath = await this.findLatestRemoteLogFile();
@@ -137,7 +132,6 @@ class FTPLogReader {
     const { FTPTail } = await import('ftp-tail');
     this.currentFilePath = await this.findLatestRemoteLogFile();
 
-    // Define a dedicated error handler.
     const errorHandler = async (err) => {
       if (err.message && (err.message.includes("InvalidRange") || err.message.includes("I/O error") || err.message.includes("EPERM"))) {
         global.logger.warn(`FTPTail encountered an error: ${err.message}. Waiting 10 seconds before reinitializing...`);
@@ -147,7 +141,6 @@ class FTPLogReader {
           global.logger.error("Error during unwatch: " + unwatchErr.message);
         }
         this.reader = null;
-        // Before reinitializing, get the current file size and set offset accordingly.
         let offset = 0;
         try {
           offset = await this.getRemoteFileSize(this.currentFilePath);
@@ -161,12 +154,10 @@ class FTPLogReader {
               ftp: this.options.ftp,
               fetchInterval: this.options.fetchInterval || 0,
               maxTempFileSize: this.options.maxTempFileSize || 5 * 1000 * 1000,
-              // Pass the offset so that we start tailing from the current file size.
               offset: offset,
             });
             this.reader.on('line', this.queueLine);
             this.reader.on('error', errorHandler);
-            // Do not backfill on reinitialization (preserve state).
             await this.reader.watch(this.currentFilePath, { offset: offset });
             global.logger.info("Reinitialized FTPTail successfully.");
           } catch (watchErr) {
@@ -178,7 +169,6 @@ class FTPLogReader {
       }
     };
 
-    // Create new tail instance.
     this.reader = new FTPTail({
       ftp: this.options.ftp,
       fetchInterval: this.options.fetchInterval || 0,
@@ -193,7 +183,6 @@ class FTPLogReader {
     this.initialized = true;
     await this.reader.watch(this.currentFilePath);
 
-    // Set up an interval to check for new log file every 60 seconds.
     this.newLogCheckInterval = setInterval(() => this.checkForNewLogFile(), 60000);
   }
 
