@@ -4,7 +4,6 @@
 
 ReforgerJS is a third-party JavaScript framework designed for comprehensive monitoring, administration, and integration of your Arma Reforger server. It not only provides powerful tools to manage player data and server status but also features seamless Discord integration, enabling real-time alerts, commands, and statistics right from your Discord server.
 
-<br>
 
 ## **Using ReforgerJS**
 
@@ -262,6 +261,13 @@ The following is a list of commands built into ReforgerJS, you can click their t
       <strong>Warcrimes:</strong> Warcrime values, teamkills, friendly roadkills, and additional related metrics.
     </li>
   </ul>
+    <li>
+      <h4>tableName Config Option</h4>
+      <h6>Description</h6>
+      <p>TableName specified in DBLogStats Plugin</p>
+      <h6>Default</h6>
+      <pre><code>""</code></pre>
+    </li>
 </details>
 
 <br>
@@ -306,7 +312,7 @@ The following is a list of plugins built into ReforgerJS, you can click their ti
            <h6>Description</h6>
            <p>Name for the stats table to be created. (This will matter if you plan to run more than 1 server)</p>
            <h6>Default</h6>
-           <pre><code></code></pre></li></ul>
+           <pre><code>""</code></pre></li></ul>
 </details>
 
 <details>
@@ -318,7 +324,7 @@ The following is a list of plugins built into ReforgerJS, you can click their ti
            <h6>Description</h6>
            <p>The ID of a discord channel or Thread</p>
            <h6>Default</h6>
-           <pre><code></code></pre></li></ul>
+           <pre><code>""</code></pre></li></ul>
 </details>
 
 <details>
@@ -330,7 +336,7 @@ The following is a list of plugins built into ReforgerJS, you can click their ti
            <h6>Description</h6>
            <p>The ID of a discord channel or Thread</p>
            <h6>Default</h6>
-           <pre><code></code></pre></li></ul>
+           <pre><code>""</code></pre></li></ul>
 </details>
 
 <details>
@@ -342,7 +348,7 @@ The following is a list of plugins built into ReforgerJS, you can click their ti
            <h6>Description</h6>
            <p>The ID of a discord channel or Thread</p>
            <h6>Default</h6>
-           <pre><code></code></pre></li>
+           <pre><code>""</code></pre></li>
           <li><h4>logAlts</h4>
            <h6>Description</h6>
            <p>Whether to log these Alts to a channel/Thread</p>
