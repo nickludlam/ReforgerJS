@@ -26,7 +26,6 @@ module.exports = {
         const identifier = interaction.options.getString('identifier');
         const value = interaction.options.getString('value');
 
-        // Log the input values (identifier and value)
         console.log(`Identifier: ${identifier}, Value: ${value}`);
 
         const commandHandler = require('../commandHandler');
