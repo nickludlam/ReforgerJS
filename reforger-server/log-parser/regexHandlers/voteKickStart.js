@@ -5,7 +5,9 @@ class VoteKickStartHandler extends EventEmitter {
         super();
         this.regex = /(\d{2}:\d{2}:\d{2}\.\d{3}).*?Player '(\d+)' approved vote \| Vote Type: 'KICK'.*?\| Count \(1\/\d+\)/;
     }
-
+    test(line) {
+        return this.regex.test(line);
+      }
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {

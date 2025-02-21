@@ -6,7 +6,22 @@
     "queryPort": 1111,
     "rconPort": 1111,
     "rconPassword": "PASSWORD",
-    "logDir": "CC:/path/to/reforger/log/folder"
+    "logReaderMode": "tail",
+    "filename": "console.log",
+    "backfill": true,
+    "logDir": "CC:/path/to/reforger/log/folder",
+    "sftp": {
+      "host": "xxx.xxx.xxx.xxx",
+      "port": 21,
+      "username": "SFTP Username",
+      "password": "SFTP Password"
+    },
+    "ftp": {
+      "host": "xxx.xxx.xxx.xxx",
+      "port": 21,
+      "user": "FTP Username",
+      "password": "FTP Password"
+    }
   },
   "consoleLogLevel": "info",
   "outputLogLevel": "info",
