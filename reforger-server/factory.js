@@ -159,6 +159,7 @@ async function performStartupChecks(config) {
           waitForConnections: true,
           connectionLimit: 10,
           queueLimit: 0,
+          connectTimeout: 10000
         });
 
         await pool.query('SELECT 1');
@@ -207,7 +208,7 @@ async function performStartupChecks(config) {
     });
   }
 
-  return discordClient; // Return the Discord client for plugins and other modules
+  return discordClient;
 }
 
 

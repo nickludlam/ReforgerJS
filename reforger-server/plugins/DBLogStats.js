@@ -1,5 +1,5 @@
 const mysql = require("mysql2/promise");
-const fs = require("fs");
+const fs = require("fs").promises;
 const pathModule = require("path");
 
 class DBLogStats {
@@ -24,23 +24,16 @@ class DBLogStats {
         !this.config.connectors.mysql ||
         !this.config.connectors.mysql.enabled
       ) {
-        logger.warn(
-          `[${this.name}] MySQL is not enabled in the configuration. Plugin will be disabled.`
-        );
+        logger.warn(`[${this.name}] MySQL is not enabled in the configuration. Plugin will be disabled.`);
         return;
       }
-
       if (!process.mysqlPool) {
-        logger.error(
-          `[${this.name}] MySQL pool is not available. Ensure MySQL is connected before enabling this plugin.`
-        );
+        logger.error(`[${this.name}] MySQL pool is not available. Ensure MySQL is connected before enabling this plugin.`);
         return;
       }
 
       // Retrieve plugin configuration
-      const pluginConfig = this.config.plugins.find(
-        (plugin) => plugin.plugin === "DBLogStats"
-      );
+      const pluginConfig = this.config.plugins.find(plugin => plugin.plugin === "DBLogStats");
       if (!pluginConfig) {
         logger.warn(`[${this.name}] Plugin configuration not found. Plugin disabled.`);
         return;
@@ -57,10 +50,10 @@ class DBLogStats {
         return;
       }
       this.folderPath = pluginConfig.path;
-      if (!fs.existsSync(this.folderPath)) {
-        logger.error(
-          `[${this.name}] Folder path '${this.folderPath}' not found. Plugin disabled.`
-        );
+      try {
+        await fs.access(this.folderPath);
+      } catch (err) {
+        logger.error(`[${this.name}] Folder path '${this.folderPath}' not found. Plugin disabled.`);
         return;
       }
 
@@ -76,20 +69,13 @@ class DBLogStats {
 
       // Start the logging interval
       this.startLogging();
-      logger.info(
-        `[${this.name}] Initialized and started logging stats every ${this.logIntervalMinutes} minutes.`
-      );
+      logger.info(`[${this.name}] Initialized and started logging stats every ${this.logIntervalMinutes} minutes.`);
     } catch (error) {
       logger.error(`[${this.name}] Error during initialization: ${error.message}`);
     }
   }
 
   async setupSchema() {
-    // The table schema includes:
-    // - id (primary key)
-    // - playerUID (unique)
-    // - 35 stat columns (in the order given)
-    // - created (timestamp)
     const createTableQuery = `
       CREATE TABLE IF NOT EXISTS \`${this.tableName}\` (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -132,60 +118,48 @@ class DBLogStats {
         created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
-
     try {
       const connection = await process.mysqlPool.getConnection();
       await connection.query(createTableQuery);
       connection.release();
       logger.verbose(`[${this.name}] Database schema ensured for table '${this.tableName}'.`);
     } catch (error) {
-      logger.error(
-        `[${this.name}] Failed to set up database schema: ${error.message}`
-      );
+      logger.error(`[${this.name}] Failed to set up database schema: ${error.message}`);
       throw error;
     }
   }
 
   startLogging() {
     const intervalMs = this.logIntervalMinutes * 60 * 1000;
-    // Run immediately and then at each interval.
+    // Run immediately, then on each interval.
     this.logStats();
     this.interval = setInterval(() => this.logStats(), intervalMs);
-    logger.verbose(
-      `[${this.name}] Started logging every ${this.logIntervalMinutes} minutes.`
-    );
+    logger.verbose(`[${this.name}] Started logging every ${this.logIntervalMinutes} minutes.`);
   }
 
   async logStats() {
     logger.verbose(`[${this.name}] Initiating stats logging cycle.`);
-
     try {
-      // Read the folder for files
-      const files = fs.readdirSync(this.folderPath);
-      // Filter files that match "PlayerData.{playerUID}.json"
-      const statFiles = files.filter((file) => /^PlayerData\..+\.json$/.test(file));
+      const files = await fs.readdir(this.folderPath);
+      const statFiles = files.filter(file => /^PlayerData\..+\.json$/.test(file));
       if (statFiles.length === 0) {
         logger.verbose(`[${this.name}] No player stat files found in folder.`);
         return;
       }
 
-      // Process each stat file
+      // Process files sequentially
       for (const file of statFiles) {
-        // Extract the player UID from the filename
         const match = /^PlayerData\.(.+)\.json$/.exec(file);
-        if (!match) {
-          continue;
-        }
+        if (!match) continue;
         const playerUID = match[1];
         const filePath = pathModule.join(this.folderPath, file);
         let fileContent;
         try {
-          fileContent = fs.readFileSync(filePath, "utf8");
+          fileContent = await fs.readFile(filePath, "utf8");
         } catch (readError) {
           logger.warn(`[${this.name}] Failed to read file ${file}: ${readError.message}`);
           continue;
         }
-
         let jsonData;
         try {
           jsonData = JSON.parse(fileContent);
@@ -193,22 +167,16 @@ class DBLogStats {
           logger.warn(`[${this.name}] Invalid JSON in file ${file}: ${parseError.message}`);
           continue;
         }
-
         if (!jsonData.m_aStats || !Array.isArray(jsonData.m_aStats)) {
           logger.warn(`[${this.name}] Missing or invalid 'm_aStats' in file ${file}.`);
           continue;
         }
         const stats = jsonData.m_aStats;
         if (stats.length < 35) {
-          logger.warn(
-            `[${this.name}] Not enough stat entries in file ${file}. Expected at least 35, got ${stats.length}.`
-          );
+          logger.warn(`[${this.name}] Not enough stat entries in file ${file}. Expected at least 35, got ${stats.length}.`);
           continue;
         }
-        // Use only the first 35 values of the stats array (ignoring any extras)
         const trimmedStats = stats.slice(0, 35);
-
-        // Destructure according to the new mapping:
         const [
           level,                         // index 0
           level_experience,              // 1
@@ -247,14 +215,12 @@ class DBLogStats {
           kick_streak                    // 34
         ] = trimmedStats;
 
-        // Update or insert the record in the database.
         try {
           const [rows] = await process.mysqlPool.query(
             `SELECT * FROM \`${this.tableName}\` WHERE playerUID = ?`,
             [playerUID]
           );
           if (rows.length > 0) {
-            // Record exists; update it.
             const updateQuery = `
               UPDATE \`${this.tableName}\`
               SET level = ?,
@@ -334,7 +300,6 @@ class DBLogStats {
             ];
             await process.mysqlPool.query(updateQuery, updateValues);
           } else {
-            // Record does not exist; insert a new row.
             const insertQuery = `
               INSERT INTO \`${this.tableName}\`
               (playerUID, level, level_experience, session_duration, sppointss0, sppointss1, sppointss2, warcrimes, distance_walked, kills, ai_kills, shots, grenades_thrown, friendly_kills, friendly_ai_kills, deaths, distance_driven, points_as_driver_of_players, players_died_in_vehicle, roadkills, friendly_roadkills, ai_roadkills, friendly_ai_roadkills, distance_as_occupant, bandage_self, bandage_friendlies, tourniquet_self, tourniquet_friendlies, saline_self, saline_friendlies, morphine_self, morphine_friendlies, warcrime_harming_friendlies, crime_acceleration, kick_session_duration, kick_streak)
@@ -381,9 +346,7 @@ class DBLogStats {
             await process.mysqlPool.query(insertQuery, insertValues);
           }
         } catch (dbError) {
-          logger.error(
-            `[${this.name}] Database error processing UID ${playerUID}: ${dbError.message}`
-          );
+          logger.error(`[${this.name}] Database error processing UID ${playerUID}: ${dbError.message}`);
         }
       }
       logger.info(`[${this.name}] Stats logging cycle completed.`);

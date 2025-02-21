@@ -8,10 +8,12 @@ class DBLog {
     this.logIntervalMinutes = 5;
     this.isInitialized = false;
     this.serverInstance = null;
+    this.playerCache = new Map();
+    this.cacheTTL = 10 * 60 * 1000; 
   }
 
   async prepareToMount(serverInstance) {
-    logger.verbose(`[${this.name}] Preparing to mount...`);
+    await this.cleanup();
     this.serverInstance = serverInstance;
 
     try {
@@ -20,16 +22,10 @@ class DBLog {
         !this.config.connectors.mysql ||
         !this.config.connectors.mysql.enabled
       ) {
-        logger.warn(
-          `[${this.name}] MySQL is not enabled in the configuration. Plugin will be disabled.`
-        );
         return;
       }
 
       if (!process.mysqlPool) {
-        logger.error(
-          `[${this.name}] MySQL pool is not available. Ensure MySQL is connected before enabling this plugin.`
-        );
         return;
       }
 
@@ -47,14 +43,7 @@ class DBLog {
       await this.setupSchema();
       this.startLogging();
       this.isInitialized = true;
-      logger.info(
-        `[${this.name}] Initialized and started logging every ${this.logIntervalMinutes} minutes.`
-      );
-    } catch (error) {
-      logger.error(
-        `[${this.name}] Error during initialization: ${error.message}`
-      );
-    }
+    } catch (error) {}
   }
 
   async setupSchema() {
@@ -73,11 +62,7 @@ class DBLog {
       const connection = await process.mysqlPool.getConnection();
       await connection.query(createTableQuery);
       connection.release();
-      logger.verbose(`[${this.name}] Database schema ensured.`);
     } catch (error) {
-      logger.error(
-        `[${this.name}] Failed to set up database schema: ${error.message}`
-      );
       throw error;
     }
   }
@@ -86,74 +71,72 @@ class DBLog {
     const intervalMs = this.logIntervalMinutes * 60 * 1000;
     this.logPlayers();
     this.interval = setInterval(() => this.logPlayers(), intervalMs);
-    logger.verbose(`[${this.name}] Started logging every ${this.logIntervalMinutes} minutes.`);
   }
 
   async logPlayers() {
-    logger.verbose(`[${this.name}] Initiating player log cycle.`);
     const players = this.serverInstance.players;
 
     if (!Array.isArray(players) || players.length === 0) {
-      logger.warn(`[${this.name}] No players found to log.`);
       return;
     }
 
     for (const player of players) {
       await this.processPlayer(player);
     }
-
-    logger.info(`[${this.name}] Player log cycle completed.`);
   }
 
   async processPlayer(player) {
     if (!player.uid) {
-      logger.verbose(
-        `[${this.name}] Skipping player '${player.name}' due to missing UID.`
-      );
       return;
     }
-  
+
     try {
+      if (this.playerCache.has(player.uid)) {
+        const cachedPlayer = this.playerCache.get(player.uid);
+
+        if (
+          cachedPlayer.name === player.name &&
+          cachedPlayer.ip === player.ip &&
+          cachedPlayer.beGUID === player.beGUID
+        ) {
+          return;
+        }
+      }
+
       const [rows] = await process.mysqlPool.query(
         "SELECT * FROM players WHERE playerUID = ?",
         [player.uid]
       );
-  
+
       if (rows.length > 0) {
         const dbPlayer = rows[0];
         let needsUpdate = false;
         const updateFields = {};
-  
-        // Check if playerName has changed
+
         if (dbPlayer.playerName !== player.name) {
           updateFields.playerName = player.name || null;
           needsUpdate = true;
         }
-  
-        // Check if playerIP has changed, but only update if `player.ip` is defined
         if (player.ip && dbPlayer.playerIP !== player.ip) {
           updateFields.playerIP = player.ip;
           needsUpdate = true;
         }
-  
-        // Check if beGUID has changed
         if (player.beGUID && dbPlayer.beGUID !== player.beGUID) {
           updateFields.beGUID = player.beGUID;
           needsUpdate = true;
         }
-  
+
         if (needsUpdate) {
           const setClause = Object.keys(updateFields)
             .map((field) => `${field} = ?`)
             .join(", ");
           const values = Object.values(updateFields);
           values.push(player.uid);
-  
+
           const updateQuery = `UPDATE players SET ${setClause} WHERE playerUID = ?`;
           await process.mysqlPool.query(updateQuery, values);
         }
       } else {
-        // Player does not exist, insert a new record
         const insertQuery = `
           INSERT INTO players (playerName, playerIP, playerUID, beGUID)
           VALUES (?, ?, ?, ?)
@@ -165,20 +148,25 @@ class DBLog {
           player.beGUID || null,
         ]);
       }
-    } catch (error) {
-      logger.error(
-        `[${this.name}] Error processing player '${player.name}' (UID: ${player.uid}): ${error.message}`
-      );
-    }
+
+      this.playerCache.set(player.uid, {
+        name: player.name,
+        ip: player.ip,
+        beGUID: player.beGUID,
+      });
+
+      setTimeout(() => {
+        this.playerCache.delete(player.uid);
+      }, this.cacheTTL);
+    } catch (error) {}
   }
 
   async cleanup() {
-    logger.verbose(`[${this.name}] Cleaning up...`);
     if (this.interval) {
       clearInterval(this.interval);
-      logger.verbose(`[${this.name}] Cleared logging interval.`);
+      this.interval = null;
     }
-    logger.info(`[${this.name}] Cleanup completed.`);
+    this.playerCache.clear();
   }
 }
 
