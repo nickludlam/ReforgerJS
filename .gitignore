@@ -139,4 +139,5 @@ config copy.json
 test.js
 configDefault.json
 
+package-lock.json
 reforger-server/log-parser/logparser_state.json

@@ -39,10 +39,23 @@ class Rcon extends EventEmitter {
       this.client.close();
     }
     this.isConnected = false;
-    // Clear intervals, watchers if any
-    // Then start again
+    
+    if (this.playersInterval) {
+      clearInterval(this.playersInterval);
+      this.playersInterval = null;
+    }
+    if (this.commandTimeout) {
+      clearTimeout(this.commandTimeout);
+      this.commandTimeout = null;
+    }
+    if (this.gatherTimer) {
+      clearTimeout(this.gatherTimer);
+      this.gatherTimer = null;
+    }
+  
     setTimeout(() => this.start(), 2000);
   }
+  
 
   /**
    * Build the actual BattleEyeClientReforger instance,
@@ -70,21 +83,19 @@ class Rcon extends EventEmitter {
    * Send the 'players' command on an interval
    */
   startSendingPlayersCommand(intervalMs = 30000) {
-    setInterval(() => {
+    if (this.playersInterval) clearInterval(this.playersInterval); 
+    this.playersInterval = setInterval(() => {
       if (this.client && this.client.loggedIn && !this.client.error) {
-        // Prepare to gather new data
         this.observedPlayers = [];
         this.isGatheringPlayers = false;
         this.awaitingPlayersResponse = true;
-
-        // If no data arrives within 5s, log an error + finalize
+  
         this.commandTimeout = setTimeout(() => {
           logger.warn('No data received for "players" command within 5s');
           this.finalizePlayers();
           this.awaitingPlayersResponse = false;
         }, 5000);
-
-        // Actually send
+  
         this.client.sendCommand("players");
         logger.verbose('Sent "players" command...');
       } else {
@@ -94,6 +105,7 @@ class Rcon extends EventEmitter {
       }
     }, intervalMs);
   }
+  
 
   /**
    * Merging newly observed players into the persistent list:
@@ -102,33 +114,23 @@ class Rcon extends EventEmitter {
    * 3) Add new ones
    */
   mergePlayerLists(newList) {
-    // Build a map of newList by name
     const newMap = new Map();
-    newList.forEach((p) => {
-      newMap.set(p.name, p);
+    newList.forEach(p => newMap.set(p.uid, p));
+  
+    this.players = this.players.filter(existing => {
+      if (!newMap.has(existing.uid)) return false;
+      const updated = newMap.get(existing.uid);
+      existing.id = updated.id;
+      existing.name = updated.name;
+      newMap.delete(existing.uid);
+      return true;
     });
-
-    // Filter out old players not in the new list, or update them
-    this.players = this.players.filter((existing) => {
-      if (!newMap.has(existing.name)) {
-        // This player is no longer on the server
-        return false;
-      } else {
-        // Player still on server; update info
-        const updated = newMap.get(existing.name);
-        existing.id = updated.id;
-        existing.uid = updated.uid;
-        // remove from newMap so we don't add duplicates
-        newMap.delete(existing.name);
-        return true;
-      }
-    });
-
-    // Add any new players
+  
     for (const [, newPlayer] of newMap) {
       this.players.push(newPlayer);
     }
   }
+  
 
   /**
    * Called when we decide we've gathered all partial "players" data.
@@ -175,10 +177,6 @@ class Rcon extends EventEmitter {
    * Handle every inbound message from the RCON server
    */
   handleRconMessage(msg) {
-    //logger.verbose(`RCON says: ${msg}`);
-
-    // If we were waiting for data from the 'players' command,
-    // we can cancel the command timeout because we DID get data
     if (this.awaitingPlayersResponse) {
       if (this.commandTimeout) {
         clearTimeout(this.commandTimeout);
@@ -186,32 +184,23 @@ class Rcon extends EventEmitter {
       }
       this.awaitingPlayersResponse = false;
     }
-
-    // Detect lines that indicate we are about to see a players listing
-    if (
-      /processing command:\s*players/i.test(msg) ||
-      /players on server:/i.test(msg)
-    ) {
+  
+    if (/processing command:\s*players/i.test(msg) || /players on server:/i.test(msg)) {
       this.isGatheringPlayers = true;
-      // Typically you'd reset observedPlayers here, but if your server
-      // outputs lines *before* "players on server:" that contain data,
-      // you might want to keep them. We'll keep it simple:
-      // this.observedPlayers = [];
     }
-
-    // If we are in the middle of gathering players data, parse lines
+  
     if (this.isGatheringPlayers) {
       this.parsePlayersFromMessage(msg);
-
-      // Debounce to finalize after no new data in 1s
-      if (this.gatherTimer) {
-        clearTimeout(this.gatherTimer);
+  
+      if (!this.gatherTimer) {
+        this.gatherTimer = setTimeout(() => {
+          this.finalizePlayers();
+          this.gatherTimer = null; // Reset after execution
+        }, 1000);
       }
-      this.gatherTimer = setTimeout(() => {
-        this.finalizePlayers();
-      }, 1000);
     }
   }
+  
 }
 
 module.exports = Rcon;

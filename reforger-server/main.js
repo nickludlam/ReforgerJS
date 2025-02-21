@@ -26,35 +26,38 @@ class ReforgerServer extends EventEmitter {
 
   setupRCON() {
     try {
-      this.rcon = new Rcon(this.config);
+        if (this.rcon) {
+            this.rcon.removeAllListeners();
+        }
+        this.rcon = new Rcon(this.config);
 
-      this.rcon.on("connect", () => {
-        logger.info("RCON connected successfully.");
-        this.isReconnecting = false;
-        this.reconnectAttempts = 0;
-        this.currentReconnectDelay = this.initialReconnectDelay;
-      });
+        this.rcon.on("connect", () => { 
+            logger.info("RCON connected successfully.");
+            this.isReconnecting = false;
+            this.reconnectAttempts = 0;
+            this.currentReconnectDelay = this.initialReconnectDelay;
+        });
 
-      this.rcon.on("error", (err) => {
-        logger.error(`RCON error: ${err.message}`);
-      });
+        this.rcon.on("error", (err) => { 
+            logger.error(`RCON error: ${err.message}`);
+        });
 
-      this.rcon.on("close", () => {
-        logger.warn("RCON connection closed.");
-        this.handleRconDisconnection();
-      });
+        this.rcon.on("close", () => { 
+            logger.warn("RCON connection closed.");
+            this.handleRconDisconnection();
+        });
 
-      this.rcon.on("players", (updatedPlayers) => {
-        this.players = updatedPlayers;
-        this.emit("players", this.players);
-      });
+        this.rcon.on("players", (updatedPlayers) => { 
+            this.players = updatedPlayers; 
+            this.emit("players", this.players);
+        });
 
-      logger.info("RCON setup complete.");
+        logger.info("RCON setup complete.");
     } catch (error) {
-      logger.error(`Failed to set up RCON: ${error.message}`);
-      this.handleRconDisconnection();
+        logger.error(`Failed to set up RCON: ${error.message}`);
+        this.handleRconDisconnection();
     }
-  }
+}
 
   connectRCON() {
     if (!this.rcon) {
@@ -83,12 +86,20 @@ class ReforgerServer extends EventEmitter {
 
   setupLogParser() {
     try {
-      // Pass "console.log" as filename and the server config (which includes logDir)
-      this.logParser = new LogParser("console.log", this.config.server);
-      if (!this.logParser) {
-        logger.error("LogParser creation failed.");
-        return;
-      }
+        if (this.logParser) {
+            this.logParser.removeAllListeners();
+            this.logParser.unwatch();
+        }
+
+        this.logParser = new LogParser("console.log", this.config.server);
+        if (!this.logParser) {
+            logger.error("LogParser creation failed.");
+            return;
+        }
+
+        this.logParser.on("event", (eventData) => {
+            this.emit("logEvent", eventData);
+        });
 
       this.logParser.on("event", (eventData) => {
         this.emit("logEvent", eventData);
@@ -243,7 +254,6 @@ class ReforgerServer extends EventEmitter {
         );
       });
 
-      // Use watch() instead of start()
       this.logParser.watch();
       logger.info("Log Parser setup complete.");
     } catch (error) {
@@ -262,51 +272,52 @@ class ReforgerServer extends EventEmitter {
   }
 
   processVoteKickStartBuffer() {
+    const currentTime = Date.now();
+    
+    this.voteKickStartBuffer = this.voteKickStartBuffer.filter(event => {
+        return (currentTime - event.timestamp) < 1800000; 
+    });
+
     logger.verbose(`Processing ${this.voteKickStartBuffer.length} buffered voteKick events.`);
+
     const bufferCopy = [...this.voteKickStartBuffer];
     this.voteKickStartBuffer = [];
-    bufferCopy.forEach((data) => {
-      if (this.rcon) {
-        const playerId = parseInt(data.playerId, 10);
-        const player = this.rcon.players.find((p) => p.id === playerId);
-        if (player) {
-          const name = player.name || player.uid;
-          if (name) {
-            logger.info(
-              `Votekick Started by ${name} (from buffered event) [ID=${playerId}]`
-            );
-          } else {
-            logger.warn(`Player found with ID ${playerId} but has no name or UID (buffered event).`);
-          }
-        } else {
-          logger.warn(`Still no matching player found for playerID ${playerId} (buffered event).`);
-        }
-      }
-      this.emit("voteKickStart", data);
-    });
-  }
 
-  async attemptReconnection() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+    bufferCopy.forEach((data) => {
+        if (this.rcon) {
+            const playerId = parseInt(data.playerId, 10);
+            const player = this.rcon.players.find((p) => p.id === playerId);
+
+            if (player) {
+                logger.info(`Votekick Started by ${player.name || player.uid} (buffered) [ID=${playerId}]`);
+            } else {
+                logger.warn(`Still no matching player for ID ${playerId} (buffered event).`);
+            }
+        }
+        this.emit("voteKickStart", data);
+    });
+}
+
+async attemptReconnection() {
+  if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       logger.error("Max RCON reconnection attempts reached. Giving up.");
       return;
-    }
-
-    this.reconnectAttempts += 1;
-    logger.warn(`Attempting to reconnect to RCON. Attempt ${this.reconnectAttempts}...`);
-
-    try {
-      this.restartRCON();
-      await new Promise((resolve) => setTimeout(resolve, this.currentReconnectDelay));
-      this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
-    } catch (error) {
-      logger.error(`Reconnection attempt ${this.reconnectAttempts} failed: ${error.message}`);
-      await new Promise((resolve) => setTimeout(resolve, this.currentReconnectDelay));
-      this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
-    }
-
-    this.attemptReconnection();
   }
+
+  this.reconnectAttempts += 1;
+  logger.warn(`Attempting to reconnect to RCON. Attempt ${this.reconnectAttempts}...`);
+
+  try {
+      this.restartRCON();
+      this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
+  } catch (error) {
+      logger.error(`Reconnection attempt ${this.reconnectAttempts} failed: ${error.message}`);
+  }
+
+  setTimeout(() => {
+      this.attemptReconnection(); 
+  }, this.currentReconnectDelay);
+}
 
   initialize() {
     try {

@@ -70,6 +70,9 @@ class LogParser extends EventEmitter {
       this.playerUpdateHandler = new PlayerUpdateHandler();
       this.serverHealthHandler = new ServerHealthHandler();
 
+
+      this.removeAllListeners();
+
       // Re-emit events from regex handlers.
       this.voteKickStartHandler.on('voteKickStart', data => this.emit('voteKickStart', data));
       this.voteKickVictimHandler.on('voteKickVictim', data => this.emit('voteKickVictim', data));
@@ -115,7 +118,16 @@ class LogParser extends EventEmitter {
 
   watch() {
     logger.verbose('LogParser - Starting log reader...');
-    this.logReader.watch();
+    
+    try {
+      this.logReader.watch();
+    } catch (error) {
+      logger.error(`LogReader watch failed: ${error.message}`);
+      return;
+    }
+  
+    if (this.parsingStatsInterval) clearInterval(this.parsingStatsInterval);
+  
     this.parsingStatsInterval = setInterval(() => this.logStats(), 60 * 1000);
   }
 
@@ -128,11 +140,21 @@ class LogParser extends EventEmitter {
   }
 
   async unwatch() {
-    await this.logReader.unwatch();
+    try {
+      if (this.logReader) await this.logReader.unwatch();
+    } catch (error) {
+      logger.error(`Error stopping LogReader: ${error.message}`);
+    }
+
     if (this.parsingStatsInterval) {
       clearInterval(this.parsingStatsInterval);
+      this.parsingStatsInterval = null;
     }
+
+    this.queue.kill();
+    this.removeAllListeners();
   }
+
 }
 
 module.exports = LogParser;
