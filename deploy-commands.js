@@ -4,10 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('./reforger-server/logger/logger');
 
-// Load config
 function loadConfig(filePath) {
     try {
         const rawData = fs.readFileSync(filePath, 'utf8');
+        if (!rawData) {
+            throw new Error('Config file is empty.');
+        }
         return JSON.parse(rawData);
     } catch (error) {
         logger.error(`Error reading config file: ${error.message}`);
@@ -15,31 +17,47 @@ function loadConfig(filePath) {
     }
 }
 
-(async () => {
-    const configPath = path.resolve(__dirname, './config.json');
-    const config = loadConfig(configPath);
-
-    if (!config.connectors.discord || !config.connectors.discord.token || !config.connectors.discord.clientId || !config.connectors.discord.guildId) {
+function validateConfig(config) {
+    if (typeof config !== 'object' || config === null) {
+        logger.error('Config is not a valid JSON object.');
+        process.exit(1);
+    }
+    if (!config.connectors || !config.connectors.discord) {
+        logger.error('Discord connector configuration is missing in the config.');
+        process.exit(1);
+    }
+    const discordConfig = config.connectors.discord;
+    if (!discordConfig.token || !discordConfig.clientId || !discordConfig.guildId) {
         logger.error('Discord token, clientId, or guildId is missing in the config.');
         process.exit(1);
     }
+    if (!config.commands || !Array.isArray(config.commands)) {
+        logger.error('Commands configuration is missing or not an array in the config.');
+        process.exit(1);
+    }
+}
+
+(async () => {
+    const configPath = path.resolve(__dirname, './config.json');
+    const config = loadConfig(configPath);
+    validateConfig(config);
 
     const rest = new REST({ version: '10' }).setToken(config.connectors.discord.token);
 
     try {
-        // Clear existing commands
         logger.info('Clearing existing commands...');
-        await rest.put(Routes.applicationGuildCommands(config.connectors.discord.clientId, config.connectors.discord.guildId), { body: [] });
+        await rest.put(
+            Routes.applicationGuildCommands(config.connectors.discord.clientId, config.connectors.discord.guildId),
+            { body: [] }
+        );
         logger.info('Successfully cleared existing commands.');
 
-        // Load all commands from the commands directory
         const commandsPath = path.resolve(__dirname, './reforger-server/commands');
         const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
         const commands = [];
 
         for (const file of commandFiles) {
             const command = require(path.join(commandsPath, file));
-
             const commandConfig = config.commands.find(cmd => cmd.command === command.data.name);
             if (commandConfig && commandConfig.enabled) {
                 commands.push(command.data.toJSON());
@@ -49,7 +67,6 @@ function loadConfig(filePath) {
             }
         }
 
-        // Deploy new commands
         logger.info('Deploying commands...');
         await rest.put(
             Routes.applicationGuildCommands(config.connectors.discord.clientId, config.connectors.discord.guildId),
@@ -60,6 +77,5 @@ function loadConfig(filePath) {
         logger.error(`Error deploying commands: ${error.message}`);
     }
 
-    // Exit process
     process.exit(0);
 })();

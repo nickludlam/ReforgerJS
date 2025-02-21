@@ -1,8 +1,27 @@
-// factory.js
 const fs = require('fs');
+const path = require('path');
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const mysql = require('mysql2/promise');
 const fetch = require('node-fetch'); 
+const logger = require('./reforger-server/logger/logger');
+
+/**
+ * Load and parse the config file.
+ * Exits the process if the file is empty or contains invalid JSON.
+ */
+function loadConfig(filePath) {
+  try {
+    const rawData = fs.readFileSync(filePath, 'utf8');
+    if (!rawData || rawData.trim() === '') {
+      logger.error('Config file is empty.');
+      process.exit(1);
+    }
+    return JSON.parse(rawData);
+  } catch (error) {
+    logger.error(`Error parsing config.json: ${error.message}`);
+    process.exit(1);
+  }
+}
 
 /**
  * Validate the config object.
@@ -37,7 +56,7 @@ function validateConfig(config) {
 
   // Validate Discord configuration
   const discordConfig = config.connectors.discord;
-  if (!discordConfig.token || !discordConfig.clientId || !discordConfig.guildId) {
+  if (!discordConfig || !discordConfig.token || !discordConfig.clientId || !discordConfig.guildId) {
     logger.error('Invalid configuration: Discord settings must include token, clientId, and guildId.');
     return false;
   }
@@ -50,7 +69,6 @@ function validateConfig(config) {
       return false;
     }
   }
-
 
   // Validate plugins configuration
   if (!Array.isArray(config.plugins)) {
@@ -71,7 +89,6 @@ async function performStartupChecks(config) {
   let discordClient = null; // Initialize to null
 
   // 1) Ensure the log directory exists
-  // Only check local log directory if mode is 'tail'
   if (config.server.logReaderMode === 'tail') {
     if (!fs.existsSync(config.server.logDir)) {
       logger.error(`Log directory not found: ${config.server.logDir}`);
@@ -82,7 +99,6 @@ async function performStartupChecks(config) {
   } else {
     logger.info(`Skipping local log directory check for mode: ${config.server.logReaderMode}`);
   }
-
 
   // 3) Connect to Discord (if token is present)
   const discordConfig = config.connectors.discord;
@@ -95,7 +111,6 @@ async function performStartupChecks(config) {
       ],
     });
 
-    // Event listeners for better debugging
     discordClient.on('ready', async () => {
       logger.info(`Logged in as ${discordClient.user.tag}`);
       discordClient.user.setActivity({
@@ -145,7 +160,7 @@ async function performStartupChecks(config) {
   if (config.connectors.mysql && config.connectors.mysql.enabled) {
     const mysqlConfig = config.connectors.mysql;
     const maxRetries = Infinity;
-    const initialRetryDelay = 5000; // 5 seconds
+    const initialRetryDelay = 5000; 
     let retryDelay = initialRetryDelay;
 
     const createMySQLPool = async () => {
@@ -182,7 +197,7 @@ async function performStartupChecks(config) {
           attempt += 1;
           logger.warn(`MySQL reconnection attempt ${attempt} failed. Retrying in ${retryDelay / 1000} seconds...`);
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
-          retryDelay = Math.min(retryDelay * 2, 60000); // Cap at 60 seconds
+          retryDelay = Math.min(retryDelay * 2, 60000);
         }
       }
       throw new Error('Max MySQL reconnection attempts reached.');
@@ -211,9 +226,8 @@ async function performStartupChecks(config) {
   return discordClient;
 }
 
-
-
 module.exports = {
+  loadConfig,
   validateConfig,
   performStartupChecks,
 };
