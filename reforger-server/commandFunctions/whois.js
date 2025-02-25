@@ -2,19 +2,16 @@ const mysql = require("mysql2/promise");
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
     try {
-        // Log the Discord user info and the command input
         const user = interaction.user;
         const identifier = extraData.identifier;
         const value = extraData.value;
         
         logger.info(`[Whois Command] User: ${user.username} (ID: ${user.id}) used /whois with Identifier: ${identifier}, Value: ${value}`);
 
-        // Defer the interaction immediately
         if (!interaction.deferred && !interaction.replied) {
             await interaction.deferReply({ ephemeral: true });
         }
 
-        // Ensure MySQL is enabled in the configuration
         if (!serverInstance.config.connectors ||
             !serverInstance.config.connectors.mysql ||
             !serverInstance.config.connectors.mysql.enabled) {
@@ -22,7 +19,6 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        // Ensure the database connection pool exists
         const pool = process.mysqlPool || serverInstance.mysqlPool;
 
         if (!pool) {
@@ -30,7 +26,6 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        // Map identifier to database fields
         const fieldMap = {
             beguid: 'beGUID',
             uuid: 'playerUID',
@@ -46,7 +41,6 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         }
 
         try {
-            // Query the database
             const [rows] = await pool.query(
                 `SELECT playerName, playerIP, playerUID, beGUID FROM players WHERE ?? = ?`,
                 [dbField, value]
@@ -57,7 +51,6 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 return;
             }
 
-            // Build the embed
             const embeds = [];
             let currentEmbed = {
                 title: 'Reforger Lookup Directory',
@@ -80,7 +73,6 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
                 currentEmbed.fields.push(playerData);
 
-                // If the embed exceeds Discord's character limit, send it and start a new one
                 const embedLength = JSON.stringify(currentEmbed).length;
                 if (embedLength >= 5900) {
                     embeds.push(currentEmbed);
@@ -96,18 +88,14 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 }
             });
 
-            // Push the last embed if it has fields
             if (currentEmbed.fields.length > 0) {
                 embeds.push(currentEmbed);
             }
 
-            // Send all embeds
             for (const embed of embeds) {
                 if (embeds.indexOf(embed) === 0) {
-                    // Edit the initial reply for the first embed
                     await interaction.editReply({ embeds: [embed] });
                 } else {
-                    // Send follow-up messages for additional embeds
                     await interaction.followUp({ embeds: [embed], ephemeral: true });
                 }
             }

@@ -2,12 +2,10 @@ const { EmbedBuilder } = require('discord.js');
 const mysql = require('mysql2/promise');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
-    // Get the UUID from extraData, which now contains all command options
-    const uuid = extraData.uuid;
+    const identifier = extraData.identifier;
     const user = interaction.user;
-    console.log(`[Stats Command] User: ${user.username} (ID: ${user.id}) requested stats for UUID: ${uuid}`);
+    console.log(`[Stats Command] User: ${user.username} (ID: ${user.id}) requested stats for identifier: ${identifier}`);
 
-    // Handle the interaction state
     if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({ ephemeral: true });
     }
@@ -19,7 +17,6 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        // Get the stats table name from command config that was passed through extraData
         const statsConfig = extraData.commandConfig || serverInstance.config.commands.find(c => c.command === 'stats');
         if (!statsConfig || !statsConfig.statsTable) {
             await interaction.editReply('Stats command is not properly configured.');
@@ -34,23 +31,63 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        const [[playerExists]] = await pool.query(r
-            `SELECT (EXISTS (SELECT 1 FROM \`${statsTable}\` WHERE playerUID = ?) 
-             OR EXISTS (SELECT 1 FROM players WHERE playerUID = ?)) AS existsInDB`,
-            [uuid, uuid]
-        );
-        if (!playerExists.existsInDB) {
-            await interaction.editReply(`Player with UUID: ${uuid} could not be found in the database.`);
-            return;
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+        
+        let playerUID;
+        let playerName;
+
+        if (isUUID) {
+            playerUID = identifier;
+            
+            const [[playerExists]] = await pool.query(
+                `SELECT (EXISTS (SELECT 1 FROM \`${statsTable}\` WHERE playerUID = ?) 
+                 OR EXISTS (SELECT 1 FROM players WHERE playerUID = ?)) AS existsInDB`,
+                [playerUID, playerUID]
+            );
+            
+            if (!playerExists.existsInDB) {
+                await interaction.editReply(`Player with UUID: ${playerUID} could not be found in the database.`);
+                return;
+            }
+            
+            const [playerRow] = await pool.query(`SELECT playerName FROM players WHERE playerUID = ?`, [playerUID]);
+            playerName = (playerRow.length > 0) ? playerRow[0].playerName : 'Unknown Player';
+        } else {
+            const [matchingPlayers] = await pool.query(
+                `SELECT playerUID, playerName FROM players WHERE playerName LIKE ?`,
+                [`%${identifier}%`]
+            );
+            
+            if (matchingPlayers.length === 0) {
+                await interaction.editReply(`No players found with name containing: ${identifier}`);
+                return;
+            } else if (matchingPlayers.length > 1) {
+                const displayCount = Math.min(matchingPlayers.length, 3);
+                let responseMessage = `Found ${matchingPlayers.length} players matching "${identifier}". `;
+                
+                if (matchingPlayers.length > 3) {
+                    responseMessage += `Showing first 3 results. Please refine your search or use a UUID instead.\n\n`;
+                } else {
+                    responseMessage += `Please use one of the following UUIDs for a specific player:\n\n`;
+                }
+                
+                for (let i = 0; i < displayCount; i++) {
+                    const player = matchingPlayers[i];
+                    responseMessage += `${i+1}. ${player.playerName} - UUID: ${player.playerUID}\n`;
+                }
+                
+                await interaction.editReply(responseMessage);
+                return;
+            } else {
+                playerUID = matchingPlayers[0].playerUID;
+                playerName = matchingPlayers[0].playerName;
+            }
         }
 
-        const [rows] = await pool.query(`SELECT * FROM \`${statsTable}\` WHERE playerUID = ?`, [uuid]);
-
-        const [playerRow] = await pool.query(`SELECT playerName FROM players WHERE playerUID = ?`, [uuid]);
-        const playerName = (playerRow.length > 0) ? playerRow[0].playerName : 'Unknown Player';
+        const [rows] = await pool.query(`SELECT * FROM \`${statsTable}\` WHERE playerUID = ?`, [playerUID]);
 
         if (rows.length === 0) {
-            await interaction.editReply(`No stats found for UUID: ${uuid}`);
+            await interaction.editReply(`No stats found for player: ${playerName} (${playerUID})`);
             return;
         }
         const stats = rows[0];
@@ -60,7 +97,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
         const embed = new EmbedBuilder()
             .setTitle("📊 Player Stats")
-            .setDescription(`**User:** ${playerName}\n**UUID:** ${uuid}\n---------------\n`)
+            .setDescription(`**User:** ${playerName}\n**UUID:** ${playerUID}\n---------------\n`)
             .setColor("#FFA500")
             .setFooter({ text: "Reforger Stats - ZSUGaming" })
             .addFields(
