@@ -21,14 +21,5 @@ module.exports = {
                 .setName('value')
                 .setDescription('The value of the chosen identifier')
                 .setRequired(true)
-        ),
-    async execute(interaction) {
-        const identifier = interaction.options.getString('identifier');
-        const value = interaction.options.getString('value');
-
-        console.log(`Identifier: ${identifier}, Value: ${value}`);
-
-        const commandHandler = require('../commandHandler');
-        await commandHandler(interaction, { identifier, value });
-    },
+        )
 };

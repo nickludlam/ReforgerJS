@@ -43,17 +43,25 @@ class CommandHandler {
         }
     
         try {
+            // Add command config to extraData for command functions that might need it
+            extraData.commandConfig = commandConfig;
+            
             const commandFunction = require(`./commandFunctions/${commandName}`);
             await commandFunction(interaction, this.serverInstance, this.discordClient, extraData);
         } catch (error) {
             logger.error(`Error executing command '${commandName}': ${error.message}`);
-            await interaction.reply({
-                content: 'An error occurred while executing the command.',
-                ephemeral: true
-            });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while executing the command.',
+                    ephemeral: true
+                });
+            } else if (interaction.deferred && !interaction.replied) {
+                await interaction.editReply({
+                    content: 'An error occurred while executing the command.'
+                });
+            }
         }
     }
-    
 
     getAllowedRolesForLevel(level) {
         const roleLevels = this.config.roleLevels;

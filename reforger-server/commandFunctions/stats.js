@@ -2,11 +2,15 @@ const { EmbedBuilder } = require('discord.js');
 const mysql = require('mysql2/promise');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
-    const uuid = extraData.uuid || interaction.options.getString('uuid');
+    // Get the UUID from extraData, which now contains all command options
+    const uuid = extraData.uuid;
     const user = interaction.user;
     console.log(`[Stats Command] User: ${user.username} (ID: ${user.id}) requested stats for UUID: ${uuid}`);
 
-    await interaction.deferReply({ ephemeral: true });
+    // Handle the interaction state
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ ephemeral: true });
+    }
 
     try {
         const pool = process.mysqlPool || serverInstance.mysqlPool;
@@ -15,7 +19,8 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        const statsConfig = serverInstance.config.commands.find(c => c.command === 'stats');
+        // Get the stats table name from command config that was passed through extraData
+        const statsConfig = extraData.commandConfig || serverInstance.config.commands.find(c => c.command === 'stats');
         if (!statsConfig || !statsConfig.statsTable) {
             await interaction.editReply('Stats command is not properly configured.');
             return;
@@ -29,7 +34,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        const [[playerExists]] = await pool.query(
+        const [[playerExists]] = await pool.query(r
             `SELECT (EXISTS (SELECT 1 FROM \`${statsTable}\` WHERE playerUID = ?) 
              OR EXISTS (SELECT 1 FROM players WHERE playerUID = ?)) AS existsInDB`,
             [uuid, uuid]

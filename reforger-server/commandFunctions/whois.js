@@ -4,11 +4,15 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
     try {
         // Log the Discord user info and the command input
         const user = interaction.user;
-        const { identifier, value } = extraData;
+        const identifier = extraData.identifier;
+        const value = extraData.value;
+        
         logger.info(`[Whois Command] User: ${user.username} (ID: ${user.id}) used /whois with Identifier: ${identifier}, Value: ${value}`);
 
         // Defer the interaction immediately
-        await interaction.deferReply({ ephemeral: true });
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply({ ephemeral: true });
+        }
 
         // Ensure MySQL is enabled in the configuration
         if (!serverInstance.config.connectors ||
@@ -99,7 +103,13 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
             // Send all embeds
             for (const embed of embeds) {
-                await interaction.followUp({ embeds: [embed] });
+                if (embeds.indexOf(embed) === 0) {
+                    // Edit the initial reply for the first embed
+                    await interaction.editReply({ embeds: [embed] });
+                } else {
+                    // Send follow-up messages for additional embeds
+                    await interaction.followUp({ embeds: [embed], ephemeral: true });
+                }
             }
         } catch (queryError) {
             logger.error(`[Whois Command] Database query error: ${queryError.message}`);
@@ -107,6 +117,13 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         }
     } catch (error) {
         logger.error(`[Whois Command] Unexpected error: ${error.message}`);
-        await interaction.editReply('An unexpected error occurred while executing the command.');
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: 'An unexpected error occurred while executing the command.',
+                ephemeral: true
+            });
+        } else if (interaction.deferred && !interaction.replied) {
+            await interaction.editReply('An unexpected error occurred while executing the command.');
+        }
     }
 };

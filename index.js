@@ -62,11 +62,19 @@ async function main() {
         discordClient.on('interactionCreate', async (interaction) => {
             try {
                 if (interaction.isCommand()) {
+                    // Modified: Extract all command data to pass to the handler
                     const commandName = interaction.commandName;
-                    const identifier = interaction.options.getString('identifier');
-                    const value = interaction.options.getString('value');
-
-                    await commandHandler.handleCommand(interaction, { identifier, value });
+                    const extraData = {};
+                    
+                    // Get all options from the interaction
+                    if (interaction.options && interaction.options._hoistedOptions) {
+                        interaction.options._hoistedOptions.forEach(option => {
+                            extraData[option.name] = option.value;
+                        });
+                    }
+                    
+                    // Handle the command with all the extracted data
+                    await commandHandler.handleCommand(interaction, extraData);
                 }
             } catch (error) {
                 logger.error(`Error handling interaction: ${error.message}`);
