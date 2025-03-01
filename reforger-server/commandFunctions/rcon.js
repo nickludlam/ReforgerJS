@@ -101,7 +101,7 @@ module.exports = async (
       );
 
       // Send the RCON command
-      serverInstance.rcon.sendCustomCommand("restart");
+      serverInstance.rcon.sendCustomCommand("#restart");
 
       return interaction.editReply({
         content:
@@ -135,7 +135,7 @@ module.exports = async (
       );
 
       // Send the RCON command
-      serverInstance.rcon.sendCustomCommand("shutdown");
+      serverInstance.rcon.sendCustomCommand("#shutdown");
 
       return interaction.editReply({
         content:
@@ -163,7 +163,7 @@ module.exports = async (
       }
 
       // Create the kick command
-      const rconCommand = `kick ${playerId}`;
+      const rconCommand = `#kick ${playerId}`;
 
       // Log the action
       const user = interaction.user;
@@ -214,9 +214,9 @@ module.exports = async (
 
         // ban create <id> <duration> [reason]
         if (reason) {
-          rconCommand = `ban create ${playerId} ${duration} ${reason}`;
+          rconCommand = `#ban create ${playerId} ${duration} ${reason}`;
         } else {
-          rconCommand = `ban create ${playerId} ${duration}`;
+          rconCommand = `#ban create ${playerId} ${duration}`;
         }
       }
 
