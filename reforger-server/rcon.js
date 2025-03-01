@@ -64,12 +64,18 @@ class Rcon extends EventEmitter {
   initClient() {
     const { host, rconPort, rconPassword } = this.config.server;
     this.client = new BattleEyeClientReforger(host, rconPort, rconPassword);
-
+  
+    // Set the login success handler
+    this.client.loginSuccessHandler = () => {
+      logger.info("RCON login successful.");
+      this.isConnected = true;
+    };
+  
     // Called for *any* RCON message from the server
     this.client.messageHandler = (msg) => {
       this.handleRconMessage(msg);
     };
-
+  
     // Called if the client times out or forcibly closes
     this.client.timeoutHandler = () => {
       logger.warn("RCON connection timed out or closed.");
@@ -105,7 +111,21 @@ class Rcon extends EventEmitter {
       }
     }, intervalMs);
   }
-  
+
+  /**
+ * Send a custom command to the RCON server
+ * @param {string} command - The command to send
+ */
+sendCustomCommand(command) {
+  if (!this.client || !this.client.loggedIn || this.client.error) {
+    logger.warn(`Cannot send command: RCON not connected or in error state.`);
+    return;
+  }
+
+  logger.info(`Sending custom RCON command: ${command}`);
+  this.client.sendCommand(command);
+}
+
 
   /**
    * Merging newly observed players into the persistent list:

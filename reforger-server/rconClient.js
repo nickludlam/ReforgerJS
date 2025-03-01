@@ -16,6 +16,7 @@ class BattleEyeClientReforger {
     // Optional: external handlers
     this.messageHandler = null; 
     this.timeoutHandler = null;
+    this.loginSuccessHandler = null;
 
     this.sequenceNumber = 0;
     this.loggedIn = false;
@@ -68,6 +69,9 @@ class BattleEyeClientReforger {
           const loginResp = message[8];
           if (loginResp === 0x01) {
             this.loggedIn = true;
+            if (this.loginSuccessHandler) {
+              this.loginSuccessHandler();
+            }
           } else if (loginResp === 0x00) {
             console.log('Login failed');
             this.close();

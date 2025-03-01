@@ -27,20 +27,22 @@ class CommandHandler {
             return;
         }
     
-        const userRoles = interaction.member.roles.cache.map(role => role.id);
         const commandLevel = commandConfig.commandLevel;
-        const allowedRoles = this.getAllowedRolesForLevel(commandLevel);
     
-        if (!this.userHasPermission(userRoles, allowedRoles)) {
-            await interaction.reply({
-                content: 'You do not have permission to use this command.',
-                ephemeral: true
-            });
-            return;
+        if (commandLevel !== 0) {
+            const userRoles = interaction.member.roles.cache.map(role => role.id);
+            const allowedRoles = this.getAllowedRolesForLevel(commandLevel);
+    
+            if (!this.userHasPermission(userRoles, allowedRoles)) {
+                await interaction.reply({
+                    content: 'You do not have permission to use this command.',
+                    ephemeral: true
+                });
+                return;
+            }
         }
     
         try {
-            // Add command config to extraData for command functions that might need it
             extraData.commandConfig = commandConfig;
             
             const commandFunction = require(`./commandFunctions/${commandName}`);
