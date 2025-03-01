@@ -3,7 +3,6 @@ const path = require('path');
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const mysql = require('mysql2/promise');
 const fetch = require('node-fetch'); 
-const logger = require('./reforger-server/logger/logger');
 
 /**
  * Load and parse the config file.

@@ -23,10 +23,7 @@ class CommandHandler {
         const commandConfig = this.config.commands.find(cmd => cmd.command === commandName);
     
         if (!commandConfig || !commandConfig.enabled) {
-            await interaction.reply({
-                content: 'This command is currently disabled.',
-                ephemeral: true
-            });
+            logger.info(`Command '${commandName}' is disabled in this instance. Ignoring.`);
             return;
         }
     
