@@ -8,6 +8,11 @@ module.exports = {
             subcommand
                 .setName('restart')
                 .setDescription('Restart the server')
+                .addIntegerOption(option =>
+                    option.setName('server')
+                        .setDescription('Server Number')
+                        .setRequired(true)
+                )
                 .addStringOption(option =>
                     option.setName('confirm')
                         .setDescription('Type CONFIRM to proceed')
@@ -18,6 +23,11 @@ module.exports = {
             subcommand
                 .setName('shutdown')
                 .setDescription('Shutdown the server')
+                .addIntegerOption(option =>
+                    option.setName('server')
+                        .setDescription('Server Number')
+                        .setRequired(true)
+                )
                 .addStringOption(option =>
                     option.setName('confirm')
                         .setDescription('Type CONFIRM to proceed')
@@ -28,6 +38,11 @@ module.exports = {
             subcommand
                 .setName('kick')
                 .setDescription('Kick a player')
+                .addIntegerOption(option =>
+                    option.setName('server')
+                        .setDescription('Server Number')
+                        .setRequired(true)
+                )
                 .addStringOption(option =>
                     option.setName('id')
                         .setDescription('Player ID')
@@ -47,6 +62,11 @@ module.exports = {
                             { name: 'Remove', value: 'remove' }
                         )
                 )
+                .addIntegerOption(option =>
+                    option.setName('server')
+                        .setDescription('Server Number')
+                        .setRequired(true)
+                )
                 .addStringOption(option =>
                     option.setName('id')
                         .setDescription('Player ID')
@@ -55,7 +75,7 @@ module.exports = {
                 .addIntegerOption(option =>
                     option.setName('duration')
                         .setDescription('Ban duration in seconds (for create)')
-                        .setRequired(true)
+                        .setRequired(false)
                 )
                 .addStringOption(option =>
                     option.setName('reason')
