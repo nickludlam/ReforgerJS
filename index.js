@@ -81,9 +81,6 @@ async function main() {
             }
         });
 
-        // 8) Connect RCON, start sending 'players'
-        serverInstance.connectRCON();
-        serverInstance.startSendingPlayersCommand(30000);
         logger.info('Server is up and running!');
 
         // Graceful shutdown handling
