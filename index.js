@@ -56,7 +56,6 @@ async function main() {
         const CommandHandler = require('./reforger-server/commandHandler');
         const commandHandler = new CommandHandler(config, serverInstance, discordClient);
         await commandHandler.initialize();
-        logger.info('CommandHandler initialized successfully.');
 
         // Add interaction listener for slash commands
         discordClient.on('interactionCreate', async (interaction) => {
