@@ -188,7 +188,6 @@ class ReforgerServer extends EventEmitter {
             if (data.playerName && data.playerId && data.playerUid) {
               this.rcon.players.push({
                 name: data.playerName,
-                number: parseInt(data.playerId, 10),
                 id: parseInt(data.playerId, 10),
                 uid: data.playerUid,
                 ip: null,
@@ -249,9 +248,7 @@ class ReforgerServer extends EventEmitter {
         global.serverMemoryUsage = data.memory;
         global.serverPlayerCount = data.player;
         const memoryMB = (global.serverMemoryUsage / 1024).toFixed(2);
-        logger.verbose(
-          `Server Health updated: FPS: ${global.serverFPS}, Memory: ${global.serverMemoryUsage} kB (${memoryMB} MB), Player Count: ${global.serverPlayerCount}`
-        );
+        //logger.verbose(`Server Health updated: FPS: ${global.serverFPS}, Memory: ${global.serverMemoryUsage} kB (${memoryMB} MB), Player Count: ${global.serverPlayerCount}`);
       });
 
       this.logParser.watch();

@@ -132,8 +132,7 @@ class LogParser extends EventEmitter {
   }
 
   logStats() {
-    const avgLatency = this.matchingLinesPerMinute > 0 ? this.matchingLatency / this.matchingLinesPerMinute : 0;
-    logger.info(`LogParser - Lines/min: ${this.linesPerMinute} | Matching lines: ${this.matchingLinesPerMinute} | Avg latency: ${avgLatency}ms`);
+    logger.info(`LogParser - Lines/min: ${this.linesPerMinute} | Matching lines: ${this.matchingLinesPerMinute}`);
     this.linesPerMinute = 0;
     this.matchingLinesPerMinute = 0;
     this.matchingLatency = 0;

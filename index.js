@@ -56,26 +56,30 @@ async function main() {
         const CommandHandler = require('./reforger-server/commandHandler');
         const commandHandler = new CommandHandler(config, serverInstance, discordClient);
         await commandHandler.initialize();
-        logger.info('CommandHandler initialized successfully.');
 
         // Add interaction listener for slash commands
         discordClient.on('interactionCreate', async (interaction) => {
             try {
                 if (interaction.isCommand()) {
+                    // Modified: Extract all command data to pass to the handler
                     const commandName = interaction.commandName;
-                    const identifier = interaction.options.getString('identifier');
-                    const value = interaction.options.getString('value');
-
-                    await commandHandler.handleCommand(interaction, { identifier, value });
+                    const extraData = {};
+                    
+                    // Get all options from the interaction
+                    if (interaction.options && interaction.options._hoistedOptions) {
+                        interaction.options._hoistedOptions.forEach(option => {
+                            extraData[option.name] = option.value;
+                        });
+                    }
+                    
+                    // Handle the command with all the extracted data
+                    await commandHandler.handleCommand(interaction, extraData);
                 }
             } catch (error) {
                 logger.error(`Error handling interaction: ${error.message}`);
             }
         });
 
-        // 8) Connect RCON, start sending 'players'
-        serverInstance.connectRCON();
-        serverInstance.startSendingPlayersCommand(30000);
         logger.info('Server is up and running!');
 
         // Graceful shutdown handling

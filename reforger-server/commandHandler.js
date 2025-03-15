@@ -23,37 +23,44 @@ class CommandHandler {
         const commandConfig = this.config.commands.find(cmd => cmd.command === commandName);
     
         if (!commandConfig || !commandConfig.enabled) {
-            await interaction.reply({
-                content: 'This command is currently disabled.',
-                ephemeral: true
-            });
+            logger.info(`Command '${commandName}' is disabled in this instance. Ignoring.`);
             return;
         }
     
-        const userRoles = interaction.member.roles.cache.map(role => role.id);
         const commandLevel = commandConfig.commandLevel;
-        const allowedRoles = this.getAllowedRolesForLevel(commandLevel);
     
-        if (!this.userHasPermission(userRoles, allowedRoles)) {
-            await interaction.reply({
-                content: 'You do not have permission to use this command.',
-                ephemeral: true
-            });
-            return;
+        if (commandLevel !== 0) {
+            const userRoles = interaction.member.roles.cache.map(role => role.id);
+            const allowedRoles = this.getAllowedRolesForLevel(commandLevel);
+    
+            if (!this.userHasPermission(userRoles, allowedRoles)) {
+                await interaction.reply({
+                    content: 'You do not have permission to use this command.',
+                    ephemeral: true
+                });
+                return;
+            }
         }
     
         try {
+            extraData.commandConfig = commandConfig;
+            
             const commandFunction = require(`./commandFunctions/${commandName}`);
             await commandFunction(interaction, this.serverInstance, this.discordClient, extraData);
         } catch (error) {
             logger.error(`Error executing command '${commandName}': ${error.message}`);
-            await interaction.reply({
-                content: 'An error occurred while executing the command.',
-                ephemeral: true
-            });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while executing the command.',
+                    ephemeral: true
+                });
+            } else if (interaction.deferred && !interaction.replied) {
+                await interaction.editReply({
+                    content: 'An error occurred while executing the command.'
+                });
+            }
         }
     }
-    
 
     getAllowedRolesForLevel(level) {
         const roleLevels = this.config.roleLevels;
