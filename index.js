@@ -79,7 +79,9 @@ async function main() {
                 logger.error(`Error handling interaction: ${error.message}`);
             }
         });
-
+        
+        // 8) Connect RCON, start sending 'players'
+        serverInstance.startSendingPlayersCommand(30000);
         logger.info('Server is up and running!');
 
         // Graceful shutdown handling
