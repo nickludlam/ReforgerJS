@@ -63,12 +63,16 @@ class LogParser extends EventEmitter {
       const PlayerJoinedHandler = require('./regexHandlers/playerJoined');
       const PlayerUpdateHandler = require('./regexHandlers/playerUpdate');
       const ServerHealthHandler = require('./regexHandlers/serverHealth');
+      const GameStartHandler = require('./regexHandlers/gameStart');
+      const GameEndHandler = require('./regexHandlers/gameEnd');
 
       this.voteKickStartHandler = new VoteKickStartHandler();
       this.voteKickVictimHandler = new VoteKickVictimHandler();
       this.playerJoinedHandler = new PlayerJoinedHandler();
       this.playerUpdateHandler = new PlayerUpdateHandler();
       this.serverHealthHandler = new ServerHealthHandler();
+      this.gameStartHandler = new GameStartHandler();
+      this.gameEndHandler = new GameEndHandler();
 
 
       this.removeAllListeners();
@@ -79,6 +83,8 @@ class LogParser extends EventEmitter {
       this.playerJoinedHandler.on('playerJoined', data => this.emit('playerJoined', data));
       this.playerUpdateHandler.on('playerUpdate', data => this.emit('playerUpdate', data));
       this.serverHealthHandler.on('serverHealth', data => this.emit('serverHealth', data));
+      this.gameStartHandler.on('gameStart', data => this.emit('gameStart', data));
+      this.gameEndHandler.on('gameEnd', data => this.emit('gameEnd', data));
     } catch (error) {
       logger.error(`Error setting up regex handlers: ${error.message}`);
     }
@@ -109,6 +115,16 @@ class LogParser extends EventEmitter {
     }
     if (this.serverHealthHandler && this.serverHealthHandler.test(line)) {
       this.serverHealthHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+    if (this.gameStartHandler && this.gameStartHandler.test(line)) {
+      this.gameStartHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+    if (this.gameEndHandler && this.gameEndHandler.test(line)) {
+      this.gameEndHandler.processLine(line);
       this.matchingLinesPerMinute++;
       return;
     }
