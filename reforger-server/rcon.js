@@ -19,6 +19,9 @@ class Rcon extends EventEmitter {
     this.gatherTimer = null;
     this.commandTimeout = null;
     this.awaitingPlayersResponse = false;
+    
+    this.consecutiveTimeouts = 0;
+    this.maxConsecutiveTimeouts = 3;
   }
 
   /**
@@ -97,9 +100,17 @@ class Rcon extends EventEmitter {
         this.awaitingPlayersResponse = true;
   
         this.commandTimeout = setTimeout(() => {
-          logger.warn('No data received for "players" command within 5s');
+          logger.warn(`No data received for "players" command within 5s (Consecutive timeouts: ${this.consecutiveTimeouts + 1})`);
           this.finalizePlayers();
           this.awaitingPlayersResponse = false;
+          
+          this.consecutiveTimeouts++;
+          
+          if (this.consecutiveTimeouts >= this.maxConsecutiveTimeouts) {
+            logger.error(`"players" command failed ${this.consecutiveTimeouts} times in a row. Restarting RCON connection...`);
+            this.restart();
+            this.consecutiveTimeouts = 0;
+          }
         }, 5000);
   
         this.client.sendCommand("players");
@@ -203,6 +214,8 @@ sendCustomCommand(command) {
         this.commandTimeout = null;
       }
       this.awaitingPlayersResponse = false;
+      
+      this.consecutiveTimeouts = 0;
     }
   
     if (/processing command:\s*players/i.test(msg) || /players on server:/i.test(msg)) {
