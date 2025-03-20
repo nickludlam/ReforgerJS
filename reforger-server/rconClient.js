@@ -8,12 +8,11 @@ class BattleEyeClientReforger {
    * @param {string} password - RCon password
    */
   constructor(ip, port, password) {
-    this.socket = dgram.createSocket('udp4');
+    this.socket = null;
     this.ip = ip;
     this.port = port;
     this.password = password;
 
-    // Optional: external handlers
     this.messageHandler = null; 
     this.timeoutHandler = null;
     this.loginSuccessHandler = null;
@@ -25,7 +24,6 @@ class BattleEyeClientReforger {
     this.interval = null; 
     this.multipacket = null; 
 
-    // We'll use one watchdog timer for timeouts / inactivity
     this.watchdog = null;
   }
 
@@ -33,19 +31,33 @@ class BattleEyeClientReforger {
    * Opens the socket, attempts to login, and sets up event listeners.
    */
   connect() {
-    this.socket.bind();
+    if (this.socket) {
+      try {
+        this.socket.close();
+      } catch (err) {
+      }
+    }
+    
+    try {
+      this.socket = dgram.createSocket('udp4');
+      this.error = false;
+      this.socket.bind();
+    } catch (err) {
+      console.error('Failed to create socket:', err);
+      this.error = true;
+      if (this.timeoutHandler) {
+        this.timeoutHandler();
+      }
+      return;
+    }
 
-    // Handle socket errors
     this.socket.on('error', (err) => {
       console.log('Socket error:', err);
       this.error = true;
-      // Optionally close:
       this.close();
     });
 
-    // Handle incoming packets
     this.socket.on('message', (message) => {
-      // 'message' is a Buffer
       this.lastResponse = Date.now();
       this.resetWatchdog();
 
@@ -98,24 +110,20 @@ class BattleEyeClientReforger {
             return;
           }
 
-          const seq = message[8]; // The echoed sequence number
+          const seq = message[8];
 
-          // Check if it's a multi-packet response (bytes 9,10 are 0x00, #packets)
           if (message.length >= 12 && message[9] === 0x00) {
             const totalPackets = message[10];
             const currentIndex = message[11];
 
-            // If this is the first packet, create an array to store all parts
             if (currentIndex === 0) {
               this.multipacket = new Array(totalPackets);
             }
 
-            // Store if indexes match
             if (this.multipacket && this.multipacket.length === totalPackets) {
               this.multipacket[currentIndex] = this.stripHeaderMultipacket(message);
             }
 
-            // If this was the last piece
             if (currentIndex + 1 === totalPackets) {
               let combined = '';
               for (let i = 0; i < this.multipacket.length; i++) {
@@ -127,7 +135,6 @@ class BattleEyeClientReforger {
               this.multipacket = null;
             }
           } else {
-            // Single packet response
             if (this.messageHandler) {
               const msg = this.stripHeaderCommandResponse(message).toString();
               this.messageHandler(msg);
@@ -150,7 +157,6 @@ class BattleEyeClientReforger {
           const seq = message[8];
           this.acknowledgeServerMessage(seq);
 
-          // The rest is the server message
           if (this.messageHandler) {
             const msg = this.stripHeaderServerMessage(message).toString();
             this.messageHandler(msg);
@@ -163,10 +169,11 @@ class BattleEyeClientReforger {
       }
     });
 
-    // Send login
     this.login();
 
-    // Keep-alive ping every 30 seconds (must be <= 45 seconds per spec)
+    if (this.interval) {
+      clearInterval(this.interval);
+    }
     this.interval = setInterval(() => {
       this.keepAlive();
     }, 30000);
@@ -177,13 +184,14 @@ class BattleEyeClientReforger {
    * to keep the connection alive if no other commands are sent.
    */
   keepAlive() {
-    if (!this.loggedIn || this.error) return;
+    if (!this.socket || !this.loggedIn || this.error) return;
+    
     const seq = this.sequenceNumber & 0xff;
     this.sequenceNumber++;
 
     const keepaliveBuf = Buffer.alloc(2);
-    keepaliveBuf[0] = 0x01; // command type
-    keepaliveBuf[1] = seq;  // sequence
+    keepaliveBuf[0] = 0x01;
+    keepaliveBuf[1] = seq;
 
     const packet = this.buildPacket(keepaliveBuf);
     this.send(packet);
@@ -194,6 +202,11 @@ class BattleEyeClientReforger {
    *   0x00 | password
    */
   login() {
+    if (!this.socket || this.error) {
+      console.warn('Cannot login: socket not initialized or in error state.');
+      return;
+    }
+    
     const loginBuf = Buffer.alloc(this.password.length + 1);
     loginBuf[0] = 0x00; // login type
     for (let i = 0; i < this.password.length; i++) {
@@ -210,17 +223,23 @@ class BattleEyeClientReforger {
    *   0x01 | sequence number | ASCII command
    */
   sendCommand(command) {
+    if (!this.socket) {
+      console.warn('Cannot send command: socket is not initialized');
+      return;
+    }
+    
     if (!this.loggedIn || this.error) {
       console.warn('Cannot send command: not logged in or error state.');
       return;
     }
+    
     const seq = this.sequenceNumber & 0xff;
     this.sequenceNumber++;
 
     // Create buffer: type(1 byte) + seq(1 byte) + command
     const cmdBuffer = Buffer.alloc(2 + command.length);
-    cmdBuffer[0] = 0x01; // command type
-    cmdBuffer[1] = seq;  // sequence
+    cmdBuffer[0] = 0x01;
+    cmdBuffer[1] = seq;
     for (let i = 0; i < command.length; i++) {
       cmdBuffer[i + 2] = command.charCodeAt(i);
     }
@@ -235,6 +254,8 @@ class BattleEyeClientReforger {
    * The doc: "The client has to acknowledge with 0x02 | received seq number."
    */
   acknowledgeServerMessage(sequenceNumber) {
+    if (!this.socket || this.error) return;
+    
     const ackBuffer = Buffer.alloc(2);
     ackBuffer[0] = 0x02;  // ack type
     ackBuffer[1] = sequenceNumber;
@@ -256,7 +277,7 @@ class BattleEyeClientReforger {
     payload.copy(nBuffer, 1);
 
     // CRC32 of nBuffer
-    const crc = crc32(nBuffer); // typically a 4-byte Buffer
+    const crc = crc32(nBuffer);
 
     // Build final buffer
     const packet = Buffer.alloc(7 + payload.length);
@@ -270,7 +291,6 @@ class BattleEyeClientReforger {
     packet[5] = crc[3];
     // 0xFF
     packet[6] = 0xFF;
-    // Copy payload
     payload.copy(packet, 7);
 
     return packet;
@@ -280,8 +300,18 @@ class BattleEyeClientReforger {
    * Sends the data over the socket. If we're in an error state, does nothing.
    */
   send(data) {
-    if (this.error) return;
-    this.socket.send(data, 0, data.length, this.port, this.ip);
+    if (!this.socket || this.error) return;
+    
+    try {
+      this.socket.send(data, 0, data.length, this.port, this.ip);
+    } catch (err) {
+      console.error(`Error sending data: ${err.message}`);
+      this.error = true;
+      
+      if (this.timeoutHandler) {
+        this.timeoutHandler();
+      }
+    }
   }
 
   /**
@@ -337,11 +367,20 @@ class BattleEyeClientReforger {
       clearTimeout(this.watchdog);
       this.watchdog = null;
     }
-    if (!this.socket) return;
+    
+    if (this.socket) {
+      try {
+        this.socket.close();
+        this.socket.unref();
+      } catch (err) {
+        console.warn(`Error closing socket: ${err.message}`);
+      }
+      this.socket = null; 
+    }
 
-    this.socket.close();
-    this.socket.unref();
-
+    this.loggedIn = false;
+    this.error = true;
+    
     if (this.timeoutHandler) {
       this.timeoutHandler();
     }
