@@ -147,19 +147,36 @@ sendCustomCommand(command) {
   mergePlayerLists(newList) {
     const newMap = new Map();
     newList.forEach(p => newMap.set(p.uid, p));
-  
-    this.players = this.players.filter(existing => {
-      if (!newMap.has(existing.uid)) return false;
-      const updated = newMap.get(existing.uid);
-      existing.id = updated.id;
-      existing.name = updated.name;
-      newMap.delete(existing.uid);
-      return true;
+    
+    const currentTime = Date.now();
+    
+    // Update existing players
+    this.players.forEach(existing => {
+      if (newMap.has(existing.uid)) {
+        // Player still present in new list - update and mark as seen
+        const updated = newMap.get(existing.uid);
+        existing.id = updated.id;
+        existing.name = updated.name;
+        existing.lastSeen = currentTime;
+        newMap.delete(existing.uid);
+      } else {
+        // Player not in new list - mark last seen time if not already set
+        if (!existing.lastSeen) {
+          existing.lastSeen = currentTime;
+        }
+      }
     });
-  
+    
+    // Add new players from the current result
     for (const [, newPlayer] of newMap) {
+      newPlayer.lastSeen = currentTime;
       this.players.push(newPlayer);
     }
+    
+    const timeout = 120000;
+    this.players = this.players.filter(player => 
+      (currentTime - (player.lastSeen || 0)) < timeout
+    );
   }
   
 

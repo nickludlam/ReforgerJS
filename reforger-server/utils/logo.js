@@ -19,7 +19,7 @@ function printLogo() {
 
     // Notice
     logger.info(
-        `\nReforgerJS: Created by the ZSU gaming and Grouse Gaming Communities.`
+        `\nReforgerJS: Created by the ZSU Gaming!`
     );
 }
 

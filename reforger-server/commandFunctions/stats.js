@@ -99,7 +99,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             .setTitle("📊 Player Stats")
             .setDescription(`**User:** ${playerName}\n**UUID:** ${playerUID}\n---------------\n`)
             .setColor("#FFA500")
-            .setFooter({ text: "Reforger Stats - ZSUGaming" })
+            .setFooter({ text: "Reforger Stats" })
             .addFields(
                 {
                     name: "**🔸Infantry**",
