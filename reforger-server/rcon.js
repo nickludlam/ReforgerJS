@@ -9,11 +9,7 @@ class Rcon extends EventEmitter {
     this.config = config;
     this.client = null;
     this.isConnected = false;
-
-    // Persistent list of players across multiple queries
     this.players = [];
-
-    // For partial "players" command response
     this.observedPlayers = [];
     this.isGatheringPlayers = false;
     this.gatherTimer = null;
@@ -22,6 +18,8 @@ class Rcon extends EventEmitter {
     
     this.consecutiveTimeouts = 0;
     this.maxConsecutiveTimeouts = 3;
+    this.playersIntervalTime = 30000; 
+    this.playersInterval = null;
   }
 
   /**
@@ -68,22 +66,25 @@ class Rcon extends EventEmitter {
     const { host, rconPort, rconPassword } = this.config.server;
     this.client = new BattleEyeClientReforger(host, rconPort, rconPassword);
   
-    // Set the login success handler
     this.client.loginSuccessHandler = () => {
       logger.info("RCON login successful.");
       this.isConnected = true;
+      
+      if (this.playersIntervalTime && !this.playersInterval) {
+        logger.info(`Restarting players command with interval ${this.playersIntervalTime}ms after reconnection`);
+        this.startSendingPlayersCommand(this.playersIntervalTime);
+      }
+      
+      this.emit("connect");
     };
   
-    // Called for *any* RCON message from the server
     this.client.messageHandler = (msg) => {
       this.handleRconMessage(msg);
     };
   
-    // Called if the client times out or forcibly closes
     this.client.timeoutHandler = () => {
       logger.warn("RCON connection timed out or closed.");
       this.isConnected = false;
-      // Attempt a reconnect
       setTimeout(() => this.start(), 5000);
     };
   }
@@ -93,6 +94,7 @@ class Rcon extends EventEmitter {
    */
   startSendingPlayersCommand(intervalMs = 30000) {
     if (this.playersInterval) clearInterval(this.playersInterval); 
+    this.playersIntervalTime = intervalMs;
     this.playersInterval = setInterval(() => {
       if (this.client && this.client.loggedIn && !this.client.error) {
         this.observedPlayers = [];
@@ -114,9 +116,9 @@ class Rcon extends EventEmitter {
         }, 5000);
   
         this.client.sendCommand("players");
-        logger.verbose('Sent "players" command...');
+        logger.info('Sent "players" command...');
       } else {
-        logger.verbose(
+        logger.warn(
           'RCON not logged in or in error state; skipping "players" command.'
         );
       }
@@ -150,24 +152,20 @@ sendCustomCommand(command) {
     
     const currentTime = Date.now();
     
-    // Update existing players
     this.players.forEach(existing => {
       if (newMap.has(existing.uid)) {
-        // Player still present in new list - update and mark as seen
         const updated = newMap.get(existing.uid);
         existing.id = updated.id;
         existing.name = updated.name;
         existing.lastSeen = currentTime;
         newMap.delete(existing.uid);
       } else {
-        // Player not in new list - mark last seen time if not already set
         if (!existing.lastSeen) {
           existing.lastSeen = currentTime;
         }
       }
     });
     
-    // Add new players from the current result
     for (const [, newPlayer] of newMap) {
       newPlayer.lastSeen = currentTime;
       this.players.push(newPlayer);
@@ -186,13 +184,11 @@ sendCustomCommand(command) {
    */
   finalizePlayers() {
     this.mergePlayerLists(this.observedPlayers);
-    // Verbose log of final player list
     //logger.verbose(`Final player list: ${JSON.stringify(this.players, null, 2)}`);
+  logger.verbose(`Player count: ${this.players.length}`);
 
-    // Emit an event so that main.js or others can listen
     this.emit("players", this.players);
 
-    // Clean up local partial data
     this.observedPlayers = [];
     this.isGatheringPlayers = false;
     if (this.gatherTimer) {
@@ -245,7 +241,7 @@ sendCustomCommand(command) {
       if (!this.gatherTimer) {
         this.gatherTimer = setTimeout(() => {
           this.finalizePlayers();
-          this.gatherTimer = null; // Reset after execution
+          this.gatherTimer = null;
         }, 1000);
       }
     }

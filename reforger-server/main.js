@@ -2,7 +2,6 @@ const { EventEmitter } = require("events");
 const Rcon = require("./rcon");
 const LogParser = require("./log-parser/index");
 
-// Global values accessible from other parts of the code
 global.serverPlayerCount = 0;
 global.serverFPS = 0;
 global.serverMemoryUsage = 0;
@@ -302,7 +301,7 @@ class ReforgerServer extends EventEmitter {
     const currentTime = Date.now();
     
     this.voteKickStartBuffer = this.voteKickStartBuffer.filter(event => {
-      return (currentTime - event.timestamp) < 1800000; // 30 minutes
+      return (currentTime - event.timestamp) < 1800000;
     });
 
     logger.verbose(`Processing ${this.voteKickStartBuffer.length} buffered voteKick events.`);
@@ -330,20 +329,37 @@ class ReforgerServer extends EventEmitter {
       logger.error("Max RCON reconnection attempts reached. Giving up.");
       return;
     }
-
+  
     this.reconnectAttempts += 1;
     logger.warn(`Attempting to reconnect to RCON. Attempt ${this.reconnectAttempts}...`);
-
+  
     try {
+      this.rcon.removeAllListeners('connect');
+      
+      this.rcon.once('connect', () => {
+        logger.info("RCON reconnected successfully in ReforgerServer.");
+        this.isReconnecting = false;
+        this.reconnectAttempts = 0;
+        this.currentReconnectDelay = this.initialReconnectDelay;
+        
+        if (this.rcon.playersIntervalTime && !this.rcon.playersInterval) {
+          logger.info(`Ensuring players command is restarted from ReforgerServer`);
+          this.rcon.startSendingPlayersCommand(this.rcon.playersIntervalTime);
+        }
+      });
+      
       this.restartRCON();
+      
       this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
     } catch (error) {
       logger.error(`Reconnection attempt ${this.reconnectAttempts} failed: ${error.message}`);
     }
-
-    setTimeout(() => {
-      this.attemptReconnection(); 
-    }, this.currentReconnectDelay);
+  
+    if (this.isReconnecting) {
+      setTimeout(() => {
+        this.attemptReconnection(); 
+      }, this.currentReconnectDelay);
+    }
   }
 
   initialize() {
