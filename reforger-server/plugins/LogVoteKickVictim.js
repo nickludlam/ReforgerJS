@@ -66,25 +66,21 @@ class LogVoteKickVictim {
   }
 
   async handleVoteKickVictim(data) {
-    if (!data?.playerName) {
-      return;
-    }
+    // Use new properties, with fallbacks if missing
+    const voteVictimName = data?.voteVictimName || "Missing Value";
+    const voteVictimId = data?.voteVictimId || "Missing Id";
 
     const embed = new EmbedBuilder()
       .setTitle("Player has been Vote Kicked")
-      .setDescription(`**Server:** ${this.config.server.name}\n\n**Player:** ${data.playerName}`)
+      .setDescription(
+        `**Server:** ${this.config.server.name}\n\n` +
+        `**Player Kicked:** ${voteVictimName}\n` +
+        `**Player ID:** ${voteVictimId}`
+      )
       .setColor("#FFA500")
       .setFooter({
         text: "VoteKickVictim plugin - ReforgerJS",
       });
-
-    if (data.playerUID) {
-      embed.addFields({
-        name: "Player UID",
-        value: data.playerUID,
-        inline: false,
-      });
-    }
 
     try {
       await this.channelOrThread.send({ embeds: [embed] });

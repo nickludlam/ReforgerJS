@@ -134,50 +134,18 @@ class ReforgerServer extends EventEmitter {
   setupVoteKickEventHandlers() {
     // Votekick Start event
     this.logParser.on("voteKickStart", (data) => {
-      if (this.rcon) {
-        const playerId = parseInt(data.playerId, 10);
-        const player = this.rcon.players.find((p) => p.id === playerId);
-
-        if (player) {
-          const name = player.name || player.uid;
-          if (name) {
-            logger.info(`Votekick Started by ${name}`);
-            data.playerName = name;
-          } else {
-            logger.warn(`Player found with ID ${playerId} but has no name or UID.`);
-          }
-        } else {
-          logger.warn(
-            `[voteKickStart event] No matching player for ID ${playerId}. Adding to voteKickStartBuffer.`
-          );
-          this.voteKickStartBuffer.push(data);
-          setTimeout(() => {
-            this.processVoteKickStartBuffer();
-          }, this.bufferTimeout);
-        }
-      }
+      logger.info(`Votekick Started by ${data.voteOffenderName} (ID: ${data.voteOffenderId}) against ${data.voteVictimName} (ID: ${data.voteVictimId})`);
+      
       this.emit("voteKickStart", data);
     });
 
-    // Handle voteKickVictim event
-    this.logParser.on("voteKickVictim", (data) => {
-      const { playerName, group, reason } = data;
-      let playerUID = null;
-
-      const player = this.players.find((p) => p.name === playerName);
-      if (player) {
-        playerUID = player.uid || null;
-        if (playerUID) {
-          logger.info(`Player '${playerName}' (UID: ${playerUID}) has been vote kicked.`);
-        } else {
-          logger.info(`Player '${playerName}' has been vote kicked.`);
-        }
-      } else {
-        logger.info(`Player '${playerName}' has been vote kicked.`);
-      }
-      this.emit("voteKickVictim", { playerName, group, reason, playerUID });
-    });
-  }
+  // Handle voteKickVictim event
+  this.logParser.on("voteKickVictim", (data) => {
+    logger.info(`Vote kick succeeded against player '${data.voteVictimName}' (ID: ${data.voteVictimId})`);
+    
+    this.emit("voteKickVictim", data);
+  });
+}
 
   setupPlayerEventHandlers() {
     this.logParser.on("playerJoined", (data) => {
