@@ -101,7 +101,7 @@ module.exports = async (
       );
 
       // Send the RCON command
-      serverInstance.rcon.sendCustomCommand("#restart");
+      serverInstance.rcon.sendCustomCommand("restart");
 
       return interaction.editReply({
         content:

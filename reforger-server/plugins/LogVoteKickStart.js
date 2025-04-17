@@ -75,7 +75,7 @@ class LogVoteKickStart {
       .setDescription(`**Server:** ${this.config.server.name}\n\n**Player:** ${data.playerName}\n**PlayerID:** ${data.playerId}`)
       .setColor("#FFA500")
       .setFooter({
-        text: "VoteKickStart plugin - ZSUGaming ReforgerJS",
+        text: "VoteKickStart plugin - ReforgerJS",
       });
 
     try {

@@ -70,6 +70,15 @@
       "enabled": false,
       "commandLevel": 3,
       "statsTable": ""
+    },
+    {
+      "command": "rcon",
+      "enabled": true,
+      "commandLevel": 3,
+      "ban": 3,
+      "shutdown": 3,
+      "restart": 3,
+      "kick": 3
     }
   ],
   "plugins": [

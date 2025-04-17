@@ -75,7 +75,7 @@ class LogVoteKickVictim {
       .setDescription(`**Server:** ${this.config.server.name}\n\n**Player:** ${data.playerName}`)
       .setColor("#FFA500")
       .setFooter({
-        text: "VoteKickVictim plugin - ZSUGaming ReforgerJS",
+        text: "VoteKickVictim plugin - ReforgerJS",
       });
 
     if (data.playerUID) {

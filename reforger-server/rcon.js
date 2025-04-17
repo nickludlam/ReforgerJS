@@ -9,16 +9,17 @@ class Rcon extends EventEmitter {
     this.config = config;
     this.client = null;
     this.isConnected = false;
-
-    // Persistent list of players across multiple queries
     this.players = [];
-
-    // For partial "players" command response
     this.observedPlayers = [];
     this.isGatheringPlayers = false;
     this.gatherTimer = null;
     this.commandTimeout = null;
     this.awaitingPlayersResponse = false;
+    
+    this.consecutiveTimeouts = 0;
+    this.maxConsecutiveTimeouts = 3;
+    this.playersIntervalTime = 30000; 
+    this.playersInterval = null;
   }
 
   /**
@@ -65,22 +66,25 @@ class Rcon extends EventEmitter {
     const { host, rconPort, rconPassword } = this.config.server;
     this.client = new BattleEyeClientReforger(host, rconPort, rconPassword);
   
-    // Set the login success handler
     this.client.loginSuccessHandler = () => {
       logger.info("RCON login successful.");
       this.isConnected = true;
+      
+      if (this.playersIntervalTime && !this.playersInterval) {
+        logger.info(`Restarting players command with interval ${this.playersIntervalTime}ms after reconnection`);
+        this.startSendingPlayersCommand(this.playersIntervalTime);
+      }
+      
+      this.emit("connect");
     };
   
-    // Called for *any* RCON message from the server
     this.client.messageHandler = (msg) => {
       this.handleRconMessage(msg);
     };
   
-    // Called if the client times out or forcibly closes
     this.client.timeoutHandler = () => {
       logger.warn("RCON connection timed out or closed.");
       this.isConnected = false;
-      // Attempt a reconnect
       setTimeout(() => this.start(), 5000);
     };
   }
@@ -90,6 +94,7 @@ class Rcon extends EventEmitter {
    */
   startSendingPlayersCommand(intervalMs = 30000) {
     if (this.playersInterval) clearInterval(this.playersInterval); 
+    this.playersIntervalTime = intervalMs;
     this.playersInterval = setInterval(() => {
       if (this.client && this.client.loggedIn && !this.client.error) {
         this.observedPlayers = [];
@@ -97,15 +102,23 @@ class Rcon extends EventEmitter {
         this.awaitingPlayersResponse = true;
   
         this.commandTimeout = setTimeout(() => {
-          logger.warn('No data received for "players" command within 5s');
+          logger.warn(`No data received for "players" command within 5s (Consecutive timeouts: ${this.consecutiveTimeouts + 1})`);
           this.finalizePlayers();
           this.awaitingPlayersResponse = false;
+          
+          this.consecutiveTimeouts++;
+          
+          if (this.consecutiveTimeouts >= this.maxConsecutiveTimeouts) {
+            logger.error(`"players" command failed ${this.consecutiveTimeouts} times in a row. Restarting RCON connection...`);
+            this.restart();
+            this.consecutiveTimeouts = 0;
+          }
         }, 5000);
   
         this.client.sendCommand("players");
-        logger.verbose('Sent "players" command...');
+        logger.info('Sent "players" command...');
       } else {
-        logger.verbose(
+        logger.warn(
           'RCON not logged in or in error state; skipping "players" command.'
         );
       }
@@ -136,19 +149,32 @@ sendCustomCommand(command) {
   mergePlayerLists(newList) {
     const newMap = new Map();
     newList.forEach(p => newMap.set(p.uid, p));
-  
-    this.players = this.players.filter(existing => {
-      if (!newMap.has(existing.uid)) return false;
-      const updated = newMap.get(existing.uid);
-      existing.id = updated.id;
-      existing.name = updated.name;
-      newMap.delete(existing.uid);
-      return true;
+    
+    const currentTime = Date.now();
+    
+    this.players.forEach(existing => {
+      if (newMap.has(existing.uid)) {
+        const updated = newMap.get(existing.uid);
+        existing.id = updated.id;
+        existing.name = updated.name;
+        existing.lastSeen = currentTime;
+        newMap.delete(existing.uid);
+      } else {
+        if (!existing.lastSeen) {
+          existing.lastSeen = currentTime;
+        }
+      }
     });
-  
+    
     for (const [, newPlayer] of newMap) {
+      newPlayer.lastSeen = currentTime;
       this.players.push(newPlayer);
     }
+    
+    const timeout = 120000;
+    this.players = this.players.filter(player => 
+      (currentTime - (player.lastSeen || 0)) < timeout
+    );
   }
   
 
@@ -158,13 +184,11 @@ sendCustomCommand(command) {
    */
   finalizePlayers() {
     this.mergePlayerLists(this.observedPlayers);
-    // Verbose log of final player list
     //logger.verbose(`Final player list: ${JSON.stringify(this.players, null, 2)}`);
+  logger.verbose(`Player count: ${this.players.length}`);
 
-    // Emit an event so that main.js or others can listen
     this.emit("players", this.players);
 
-    // Clean up local partial data
     this.observedPlayers = [];
     this.isGatheringPlayers = false;
     if (this.gatherTimer) {
@@ -203,6 +227,8 @@ sendCustomCommand(command) {
         this.commandTimeout = null;
       }
       this.awaitingPlayersResponse = false;
+      
+      this.consecutiveTimeouts = 0;
     }
   
     if (/processing command:\s*players/i.test(msg) || /players on server:/i.test(msg)) {
@@ -215,7 +241,7 @@ sendCustomCommand(command) {
       if (!this.gatherTimer) {
         this.gatherTimer = setTimeout(() => {
           this.finalizePlayers();
-          this.gatherTimer = null; // Reset after execution
+          this.gatherTimer = null;
         }, 1000);
       }
     }
