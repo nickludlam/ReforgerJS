@@ -3,40 +3,25 @@ const { EventEmitter } = require("events");
 class VoteKickVictimHandler extends EventEmitter {
     constructor() {
         super();
-        this.identityLineRegex = /Disconnecting identity=(0x[0-9A-F]+): group=6 reason=1/; 
-        this.playerDisconnectRegex = /BattlEye Server: 'Player #\d+ (.+?) disconnected'/;
-
-        this.pendingKicks = new Map();
+        this.regex = /(\d{2}:\d{2}:\d{2}\.\d{3}).*?VOTING SYSTEM - Vote to kick player '([^']+)' \(with player id = (\d+)\) succeeded/;
     }
+    
     test(line) {
-        return this.identityLineRegex.test(line) || this.playerDisconnectRegex.test(line);
-      }
+        return this.regex.test(line);
+    }
+    
     processLine(line) {
-        const identityMatch = this.identityLineRegex.exec(line);
-        if (identityMatch) {
-            const identity = identityMatch[1];
-            this.pendingKicks.set(identity, {
-                identity,
-                group: 6,
-                reason: 1,
-                playerName: null,
+        const match = this.regex.exec(line);
+        if (match) {
+            const time = match[1];
+            const voteVictimName = match[2];
+            const voteVictimId = match[3];
+            
+            this.emit("voteKickVictim", {
+                time,
+                voteVictimName,
+                voteVictimId
             });
-            return;
-        }
-
-        const playerMatch = this.playerDisconnectRegex.exec(line);
-        if (playerMatch) {
-            const playerName = playerMatch[1];
-
-            for (const [identity, kickData] of this.pendingKicks.entries()) {
-                if (!kickData.playerName) {
-                    kickData.playerName = playerName;
-
-                    this.emit("voteKickVictim", kickData);
-                    this.pendingKicks.delete(identity);
-                    return;
-                }
-            }
         }
     }
 }

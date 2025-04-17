@@ -66,13 +66,21 @@ class LogVoteKickStart {
   }
 
   async handleVoteKickStart(data) {
-    if (!data?.playerName) {
-      return;
-    }
+    // Use new properties, with fallbacks if missing
+    const voteOffenderName = data?.voteOffenderName || "Missing Value";
+    const voteOffenderId = data?.voteOffenderId || "Missing Id";
+    const voteVictimName = data?.voteVictimName || "Missing Value";
+    const voteVictimId = data?.voteVictimId || "Missing Id";
 
     const embed = new EmbedBuilder()
       .setTitle("Player has initiated a vote kick!")
-      .setDescription(`**Server:** ${this.config.server.name}\n\n**Player:** ${data.playerName}\n**PlayerID:** ${data.playerId}`)
+      .setDescription(
+        `**Server:** ${this.config.server.name}\n\n` +
+        `**Player Initiating Vote:** ${voteOffenderName}\n` +
+        `**Player ID:** ${voteOffenderId}\n\n` +
+        `**Target Player:** ${voteVictimName}\n` +
+        `**Target Player ID:** ${voteVictimId}`
+      )
       .setColor("#FFA500")
       .setFooter({
         text: "VoteKickStart plugin - ReforgerJS",
