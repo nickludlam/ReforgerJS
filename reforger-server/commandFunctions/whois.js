@@ -41,13 +41,45 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         }
 
         try {
-            const [rows] = await pool.query(
-                `SELECT playerName, playerIP, playerUID, beGUID FROM players WHERE ?? = ?`,
-                [dbField, value]
-            );
+            let query;
+            let params;
+            
+            // Special handling for playerName to use LIKE for partial matching
+            if (dbField === 'playerName') {
+                query = `SELECT playerName, playerIP, playerUID, beGUID FROM players WHERE ${dbField} LIKE ?`;
+                params = [`%${value}%`];
+            } else {
+                query = `SELECT playerName, playerIP, playerUID, beGUID FROM players WHERE ${dbField} = ?`;
+                params = [value];
+            }
+
+            const [rows] = await pool.query(query, params);
 
             if (rows.length === 0) {
                 await interaction.editReply(`No information can be found for ${identifier}: ${value}`);
+                return;
+            }
+
+            // If we're doing a name search and got multiple results, provide a summary
+            if (dbField === 'playerName' && rows.length > 1) {
+                const displayCount = Math.min(rows.length, 10);
+                let responseMessage = `Found ${rows.length} players matching "${value}". `;
+                
+                if (rows.length > 10) {
+                    responseMessage += `Showing first 10 results. Please refine your search for more specific results.\n\n`;
+                } else {
+                    responseMessage += `Full details for each match:\n\n`;
+                }
+                
+                for (let i = 0; i < displayCount; i++) {
+                    const player = rows[i];
+                    responseMessage += `${i+1}. ${player.playerName || 'Unknown'}\n` +
+                                       `   UUID: ${player.playerUID || 'Missing'}\n` +
+                                       `   IP: ${player.playerIP || 'Missing'}\n` +
+                                       `   beGUID: ${player.beGUID || 'Missing'}\n\n`;
+                }
+                
+                await interaction.editReply(responseMessage);
                 return;
             }
 
