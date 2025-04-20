@@ -72,8 +72,13 @@
       "statsTable": ""
     },
     {
+      "command": "voteinfo",
+      "commandLevel": 3,
+      "enabled": false
+    },
+    {
       "command": "rcon",
-      "enabled": true,
+      "enabled": false,
       "commandLevel": 3,
       "ban": 3,
       "shutdown": 3,
@@ -96,6 +101,10 @@
       "plugin": "DBLog",
       "enabled": false,
       "interval": 5
+    },
+    {
+      "plugin": "VoteLogs",
+      "enabled": false
     },
     {
       "plugin": "DBLogStats",
