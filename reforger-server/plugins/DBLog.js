@@ -54,6 +54,7 @@ class DBLog {
         playerIP VARCHAR(255) NULL,
         playerUID VARCHAR(255) NOT NULL UNIQUE,
         beGUID VARCHAR(255) NULL,
+        steamID64 BIGINT NULL,
         created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
@@ -125,6 +126,10 @@ class DBLog {
           updateFields.beGUID = player.beGUID;
           needsUpdate = true;
         }
+        if (player.steamID64 && dbPlayer.steamID64 !== player.steamID64) {
+          updateFields.steamID64 = player.steamID64;
+          needsUpdate = true;
+        }
 
         if (needsUpdate) {
           const setClause = Object.keys(updateFields)
@@ -138,14 +143,15 @@ class DBLog {
         }
       } else {
         const insertQuery = `
-          INSERT INTO players (playerName, playerIP, playerUID, beGUID)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID64)
+          VALUES (?, ?, ?, ?, ?)
         `;
         await process.mysqlPool.query(insertQuery, [
           player.name || null,
           player.ip || null,
           player.uid,
           player.beGUID || null,
+          player.steamID || null,
         ]);
       }
 

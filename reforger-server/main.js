@@ -149,7 +149,7 @@ class ReforgerServer extends EventEmitter {
 
   setupPlayerEventHandlers() {
     this.logParser.on("playerJoined", (data) => {
-      const { playerName, playerIP, playerNumber, beGUID } = data;
+      const { playerName, playerIP, playerNumber, beGUID, steamID64 } = data;
       if (this.rcon) {
         const existing = this.rcon.players.find((p) => p.name === playerName);
         if (existing) {
