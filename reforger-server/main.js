@@ -147,26 +147,31 @@ class ReforgerServer extends EventEmitter {
   });
 }
 
-  setupPlayerEventHandlers() {
-    this.logParser.on("playerJoined", (data) => {
-      const { playerName, playerIP, playerNumber, beGUID } = data;
-      if (this.rcon) {
-        const existing = this.rcon.players.find((p) => p.name === playerName);
-        if (existing) {
-          existing.ip = playerIP;
-          if (beGUID) existing.beGUID = beGUID;
-        } else {
-          const newPlayer = {
-            name: playerName,
-            number: playerNumber,
-            ip: playerIP,
-          };
-          if (beGUID) newPlayer.beGUID = beGUID;
-          this.rcon.players.push(newPlayer);
-        }
+setupPlayerEventHandlers() {
+  this.logParser.on("playerJoined", (data) => {
+    const { playerName, playerIP, playerNumber, beGUID, steamID, device } = data;
+    if (this.rcon) {
+      const existing = this.rcon.players.find((p) => p.name === playerName);
+      if (existing) {
+        existing.ip = playerIP;
+        if (beGUID) existing.beGUID = beGUID;
+        if (steamID !== undefined) existing.steamID = steamID;
+        if (device !== undefined) existing.device = device;
+      } else {
+        const newPlayer = {
+          name: playerName,
+          number: playerNumber,
+          ip: playerIP,
+        };
+        if (beGUID) newPlayer.beGUID = beGUID;
+        if (steamID !== undefined) newPlayer.steamID = steamID;
+        if (device !== undefined) newPlayer.device = device;
+        this.rcon.players.push(newPlayer);
       }
-      this.emit("playerJoined", data);
-    });
+    }
+    logger.verbose(`Player joined: ${playerName} (#${playerNumber}) from ${playerIP} - Device: ${device || 'Unknown'}, SteamID: ${steamID || 'None'}, BE GUID: ${beGUID || 'Unknown'}`);
+    this.emit("playerJoined", data);
+  });
 
     this.logParser.on("playerUpdate", (data) => {
       if (this.rcon) {
