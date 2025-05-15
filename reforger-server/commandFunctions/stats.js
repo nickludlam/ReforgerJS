@@ -90,7 +90,52 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             await interaction.editReply(`No stats found for player: ${playerName} (${playerUID})`);
             return;
         }
-        const stats = rows[0];
+
+        // const stats = rows[0];
+        // Rather than getting one row back, we now get multiple rows, and we need to sum them up
+
+        // Define a set of operations to perform for each stat
+        const operations = {
+            session_duration: 'sum',
+            sppointss0: 'sum', // Infantry Points
+            sppointss1: 'sum', // Logistics Points
+            sppointss2: 'sum', // Medical Points
+            warcrimes: 'sum',
+            distance_walked: 'sum',            
+            kills: 'sum',
+            ai_kills: 'sum',
+            shots: 'sum',
+            grenades_thrown: 'sum',
+            friendly_kills: 'sum',
+            friendly_ai_kills: 'sum',
+            deaths: 'sum',
+            distance_driven: 'sum',
+            roadkills: 'sum',
+            friendly_roadkills: 'sum',
+            ai_roadkills: 'sum',
+            friendly_ai_roadkills: 'sum',
+            distance_as_occupant: 'sum',
+            bandage_self: 'sum',
+            bandage_friendlies: 'sum',
+            tourniquet_self: 'sum',
+            tourniquet_friendlies: 'sum',
+            saline_self: 'sum',
+            saline_friendlies: 'sum',
+            morphine_self: 'sum',
+            morphine_friendlies: 'sum',
+            warcrime_harming_friendlies: 'sum',
+        };
+
+        const stats = rows.reduce((acc, row) => {
+            for (const key in row) {
+                if (operations[key] === 'sum') {
+                    acc[key] = (acc[key] || 0) + row[key];
+                } else {
+                    acc[key] = row[key];
+                }
+            }
+            return acc;
+        }, {});
 
         const metersToKm = meters => (meters / 1000).toFixed(2);
         const kdRatio = stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills;
@@ -103,15 +148,15 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             .addFields(
                 {
                     name: "**🔸Infantry**",
-                    value: `Points: ${stats.sppointss0}\nPlayer Kills: ${stats.kills}\nDeaths: ${stats.deaths}\nK/D: ${kdRatio}\n\nAI Kills: ${stats.ai_kills}\nShots Fired: ${stats.shots}\nGrenades Thrown: ${stats.grenades_thrown}\nDistance Walked: ${metersToKm(stats.distance_walked)} km`
+                    value: `Points: ${parseInt(stats.sppointss0)}\nPlayer Kills: ${stats.kills}\nDeaths: ${stats.deaths}\nK/D: ${kdRatio}\n\nAI Kills: ${stats.ai_kills}\nShots Fired: ${stats.shots}\nGrenades Thrown: ${stats.grenades_thrown}\nDistance Walked: ${metersToKm(stats.distance_walked)} km`
                 },
                 {
                     name: "**🔸Logistics**",
-                    value: `Points: ${stats.sppointss1}\nRoadKills: ${stats.roadkills}\nAI Roadkills: ${stats.ai_roadkills}\nDistance Driven: ${metersToKm(stats.distance_driven)} km\nDistance as Passenger: ${metersToKm(stats.distance_as_occupant)} km`
+                    value: `Points: ${parseInt(stats.sppointss1)}\nRoadKills: ${stats.roadkills}\nAI Roadkills: ${stats.ai_roadkills}\nDistance Driven: ${metersToKm(stats.distance_driven)} km\nDistance as Passenger: ${metersToKm(stats.distance_as_occupant)} km`
                 },
                 {
                     name: "**🔸Medical**",
-                    value: `Points: ${stats.sppointss2}\nBandages Applied: ${stats.bandage_self + stats.bandage_friendlies}\nTourniquets Applied: ${stats.tourniquet_self + stats.tourniquet_friendlies}\nSaline Applied: ${stats.saline_self + stats.saline_friendlies}\nMorphine Applied: ${stats.morphine_self + stats.morphine_friendlies}`
+                    value: `Points: ${parseInt(stats.sppointss2)}\nBandages Applied: ${stats.bandage_self + stats.bandage_friendlies}\nTourniquets Applied: ${stats.tourniquet_self + stats.tourniquet_friendlies}\nSaline Applied: ${stats.saline_self + stats.saline_friendlies}\nMorphine Applied: ${stats.morphine_self + stats.morphine_friendlies}`
                 },
                 {
                     name: "**❗Warcrimes**",

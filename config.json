@@ -102,7 +102,8 @@
       "enabled": false,
       "interval": 5,
       "path": "C:/path/to/saves/profile/.save/playersave",
-      "tableName": ""
+      "tableName": "",
+      "serverName": "serverName"
     },
     {
       "plugin": "SeedTrackerBasic",

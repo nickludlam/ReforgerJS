@@ -11,6 +11,7 @@ class DBLogStats {
     this.serverInstance = null;
     this.folderPath = null;
     this.tableName = null;
+    this.serverName = null;
   }
 
   async prepareToMount(serverInstance) {
@@ -64,8 +65,15 @@ class DBLogStats {
       }
       this.tableName = pluginConfig.tableName;
 
+      // Get the server name from config
+      if (!pluginConfig.serverName || pluginConfig.serverName === "") {
+        logger.info(`[${this.name}] 'serverName' not specified in config. Multi-server stats will not be available.`);
+      }
+      this.serverName = pluginConfig.serverName;
+
       // Create/ensure database schema
       await this.setupSchema();
+      await this.migrateSchema();
 
       // Start the logging interval
       this.startLogging();
@@ -115,6 +123,10 @@ class DBLogStats {
         crime_acceleration FLOAT DEFAULT 0,
         kick_session_duration FLOAT DEFAULT 0,
         kick_streak FLOAT DEFAULT 0,
+        lightban_session_duration FLOAT DEFAULT 0,
+        lightban_streak FLOAT DEFAULT 0,
+        heavyban_kick_session_duration FLOAT DEFAULT 0,
+        heavyban_streak FLOAT DEFAULT 0,
         created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `;
@@ -128,6 +140,77 @@ class DBLogStats {
       throw error;
     }
   }
+
+    async migrateSchema() {
+    try {
+      const alterQueries = [];
+      const connection = await process.mysqlPool.getConnection();
+      
+      const [columns] = await connection.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = '${this.tableName}'
+      `);
+      
+      const columnNames = columns.map(col => col.COLUMN_NAME);
+      
+      // For multi-server support, we need to add server_name column
+      if (!columnNames.includes('server_name')) {
+        alterQueries.push('ADD COLUMN server_name VARCHAR(255) NULL');
+      }
+
+      // Check for new stats columns and add them if they don't exist - see SCR_PlayerData.c
+      if (!columnNames.includes('lightban_session_duration')) {
+        alterQueries.push('ADD COLUMN lightban_session_duration FLOAT DEFAULT 0');
+      }
+      if (!columnNames.includes('lightban_streak')) {
+        alterQueries.push('ADD COLUMN lightban_streak FLOAT DEFAULT 0');
+      }
+      if (!columnNames.includes('heavyban_kick_session_duration')) {
+        alterQueries.push('ADD COLUMN heavyban_kick_session_duration FLOAT DEFAULT 0');
+      }
+      if (!columnNames.includes('heavyban_streak')) {
+        alterQueries.push('ADD COLUMN heavyban_streak FLOAT DEFAULT 0');
+      }
+
+      // Now check if we still have a unique constraint on playerUID, and if we do, remove it
+      const [indexes] = await connection.query(`
+        SELECT INDEX_NAME
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = '${this.tableName}'
+        AND COLUMN_NAME = 'playerUID'
+        AND NON_UNIQUE = 0
+      `);
+
+      if (indexes.length > 0 && indexes[0].INDEX_NAME === 'playerUID') {
+        alterQueries.push('DROP INDEX playerUID');
+        alterQueries.push('ADD UNIQUE INDEX playerUID_server_name (playerUID, server_name)');
+      }
+      
+      if (alterQueries.length > 0) {
+        const alterQuery = `ALTER TABLE ${this.tableName} ${alterQueries.join(', ')}`;
+        await connection.query(alterQuery);
+        
+        if (this.serverInstance.logger) {
+          this.serverInstance.logger.info(`DBLog: Migrated stats table with new columns: ${alterQueries.join(', ')}`);
+        }
+      } else {
+        if (this.serverInstance.logger) {
+          this.serverInstance.logger.info(`DBLog: No migration needed for stats table.`);
+        }
+      }
+      
+      connection.release();
+    } catch (error) {
+      if (this.serverInstance.logger) {
+        this.serverInstance.logger.error(`Error migrating schema: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
 
   startLogging() {
     const intervalMs = this.logIntervalMinutes * 60 * 1000;
@@ -176,49 +259,53 @@ class DBLogStats {
           logger.warn(`[${this.name}] Not enough stat entries in file ${file}. Expected at least 35, got ${stats.length}.`);
           continue;
         }
-        const trimmedStats = stats.slice(0, 35);
+        const trimmedStats = stats.slice(0, 39);
         const [
-          level,                         // index 0
-          level_experience,              // 1
-          session_duration,              // 2
-          sppointss0,                    // 3
-          sppointss1,                    // 4
-          sppointss2,                    // 5
-          warcrimes,                     // 6
-          distance_walked,               // 7
-          kills,                         // 8
-          ai_kills,                      // 9
-          shots,                         // 10
-          grenades_thrown,               // 11
-          friendly_kills,                // 12
-          friendly_ai_kills,             // 13
-          deaths,                        // 14
-          distance_driven,               // 15
-          points_as_driver_of_players,   // 16
-          players_died_in_vehicle,       // 17
-          roadkills,                     // 18
-          friendly_roadkills,            // 19
-          ai_roadkills,                  // 20
-          friendly_ai_roadkills,         // 21
-          distance_as_occupant,          // 22
-          bandage_self,                  // 23
-          bandage_friendlies,            // 24
-          tourniquet_self,               // 25
-          tourniquet_friendlies,         // 26
-          saline_self,                   // 27
-          saline_friendlies,             // 28
-          morphine_self,                 // 29
-          morphine_friendlies,           // 30
-          warcrime_harming_friendlies,   // 31
-          crime_acceleration,            // 32
-          kick_session_duration,         // 33
-          kick_streak                    // 34
+          level,                          // 0 - Rank of the player
+          level_experience,               // 1 - XP points
+          session_duration,               // 2 - Total duration of sessions
+          sppointss0,                     // 3 - INFANTRY POINTS
+          sppointss1,                     // 4 - LOGISTICS POINTS
+          sppointss2,                     // 5 - MEDICAL POINTS
+          warcrimes,                      // 6
+          distance_walked,                // 7
+          kills,                          // 8
+          ai_kills,                       // 9
+          shots,                          // 10
+          grenades_thrown,                // 11
+          friendly_kills,                 // 12
+          friendly_ai_kills,              // 13
+          deaths,                         // 14
+          distance_driven,                // 15
+          points_as_driver_of_players,    // 16
+          players_died_in_vehicle,        // 17
+          roadkills,                      // 18
+          friendly_roadkills,             // 19
+          ai_roadkills,                   // 20
+          friendly_ai_roadkills,          // 21
+          distance_as_occupant,           // 22
+          bandage_self,                   // 23
+          bandage_friendlies,             // 24
+          tourniquet_self,                // 25
+          tourniquet_friendlies,          // 26
+          saline_self,                    // 27
+          saline_friendlies,              // 28
+          morphine_self,                  // 29
+          morphine_friendlies,            // 30
+          warcrime_harming_friendlies,    // 31 - Warcrime points
+          crime_acceleration,             // 32 - Kick & Ban acceleration
+          kick_session_duration,          // 33 - Session duration at the time player was kicked the last time
+          kick_streak,                    // 34 - How many times was the player kicked in a row after last kick in a short succession
+          lightban_session_duration,      // 35 - Session duration at the time player was lightbanned the last time
+          lightban_streak,                // 36 - How many times was the player lightbanned in a row after the last lightban in a short succession
+          heavyban_kick_session_duration, // 37 - Session duration at the time player was heavybanned the last time
+          heavyban_streak                 // 38 - How many times was the player heavybanned in a row after the last heavyban in a short succession
         ] = trimmedStats;
 
         try {
           const [rows] = await process.mysqlPool.query(
-            `SELECT * FROM \`${this.tableName}\` WHERE playerUID = ?`,
-            [playerUID]
+            `SELECT * FROM \`${this.tableName}\` WHERE playerUID = ? AND server_name = ?`,
+            [playerUID, this.serverName]
           );
           if (rows.length > 0) {
             const updateQuery = `
@@ -257,8 +344,12 @@ class DBLogStats {
                   warcrime_harming_friendlies = ?,
                   crime_acceleration = ?,
                   kick_session_duration = ?,
-                  kick_streak = ?
-              WHERE playerUID = ?
+                  kick_streak = ?,
+                  lightban_session_duration = ?,
+                  lightban_streak = ?,
+                  heavyban_kick_session_duration = ?,
+                  heavyban_streak = ?
+              WHERE playerUID = ? AND server_name = ?
             `;
             const updateValues = [
               level,
@@ -296,17 +387,23 @@ class DBLogStats {
               crime_acceleration,
               kick_session_duration,
               kick_streak,
-              playerUID
+              lightban_session_duration,
+              lightban_streak,
+              heavyban_kick_session_duration,
+              heavyban_streak,
+              playerUID,
+              this.serverName
             ];
             await process.mysqlPool.query(updateQuery, updateValues);
           } else {
             const insertQuery = `
               INSERT INTO \`${this.tableName}\`
-              (playerUID, level, level_experience, session_duration, sppointss0, sppointss1, sppointss2, warcrimes, distance_walked, kills, ai_kills, shots, grenades_thrown, friendly_kills, friendly_ai_kills, deaths, distance_driven, points_as_driver_of_players, players_died_in_vehicle, roadkills, friendly_roadkills, ai_roadkills, friendly_ai_roadkills, distance_as_occupant, bandage_self, bandage_friendlies, tourniquet_self, tourniquet_friendlies, saline_self, saline_friendlies, morphine_self, morphine_friendlies, warcrime_harming_friendlies, crime_acceleration, kick_session_duration, kick_streak)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (playerUID, server_name, level, level_experience, session_duration, sppointss0, sppointss1, sppointss2, warcrimes, distance_walked, kills, ai_kills, shots, grenades_thrown, friendly_kills, friendly_ai_kills, deaths, distance_driven, points_as_driver_of_players, players_died_in_vehicle, roadkills, friendly_roadkills, ai_roadkills, friendly_ai_roadkills, distance_as_occupant, bandage_self, bandage_friendlies, tourniquet_self, tourniquet_friendlies, saline_self, saline_friendlies, morphine_self, morphine_friendlies, warcrime_harming_friendlies, crime_acceleration, kick_session_duration, kick_streak, lightban_session_duration, lightban_streak, heavyban_kick_session_duration, heavyban_streak)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             const insertValues = [
               playerUID,
+              this.serverName,
               level,
               level_experience,
               session_duration,
@@ -341,7 +438,11 @@ class DBLogStats {
               warcrime_harming_friendlies,
               crime_acceleration,
               kick_session_duration,
-              kick_streak
+              kick_streak,
+              lightban_session_duration,
+              lightban_streak,
+              heavyban_kick_session_duration,
+              heavyban_streak
             ];
             await process.mysqlPool.query(insertQuery, insertValues);
           }
