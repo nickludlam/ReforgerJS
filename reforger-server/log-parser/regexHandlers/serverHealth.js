@@ -4,7 +4,7 @@ const { EventEmitter } = require('events');
 class ServerHealthHandler extends EventEmitter {
     constructor() {
         super();
-        this.regex = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+\S+\s+:\s+FPS:\s+([\d\.]+),.*?Mem:\s+(\d+)\s+kB,.*?Player:\s+(\d+),/;
+        this.regex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+\S+\s+:\s+FPS:\s+([\d\.]+),.*?Mem:\s+(\d+)\s+kB,.*?Player:\s+(\d+),/;
     }
 
     test(line) {

@@ -185,7 +185,7 @@ sendCustomCommand(command) {
   finalizePlayers() {
     this.mergePlayerLists(this.observedPlayers);
     //logger.verbose(`Final player list: ${JSON.stringify(this.players, null, 2)}`);
-  logger.verbose(`Player count: ${this.players.length}`);
+    logger.verbose(`RCON player count: ${this.players.length}`);
 
     this.emit("players", this.players);
 

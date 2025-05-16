@@ -4,7 +4,7 @@ const { EventEmitter } = require('events');
 class GameStartHandler extends EventEmitter {
     constructor() {
         super();
-        this.regex = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+SCRIPT\s+:\s+SCR_BaseGameMode::OnGameStateChanged\s+=\s+GAME/;
+        this.regex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+SCRIPT\s+:\s+SCR_BaseGameMode::OnGameStateChanged\s+=\s+GAME/;
     }
 
     test(line) {

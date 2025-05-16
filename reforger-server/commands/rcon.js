@@ -36,6 +36,21 @@ module.exports = {
         )
         .addSubcommand(subcommand =>
             subcommand
+                .setName('whois')
+                .setDescription('Queries the player list for a specific player')
+                .addIntegerOption(option =>
+                    option.setName('server')
+                        .setDescription('Server Number')
+                        .setRequired(true)
+                )
+                .addStringOption(option =>
+                    option.setName('playerinfo')
+                        .setDescription('Either a UUID or a Name')
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand(subcommand =>
+            subcommand
                 .setName('kick')
                 .setDescription('Kick a player')
                 .addIntegerOption(option =>

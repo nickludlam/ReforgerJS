@@ -74,6 +74,7 @@ class DBLogStats {
       // Create/ensure database schema
       await this.setupSchema();
       await this.migrateSchema();
+      // await this.clearTable();
 
       // Start the logging interval
       this.startLogging();
@@ -141,7 +142,7 @@ class DBLogStats {
     }
   }
 
-    async migrateSchema() {
+  async migrateSchema() {
     try {
       const alterQueries = [];
       const connection = await process.mysqlPool.getConnection();
@@ -208,6 +209,18 @@ class DBLogStats {
         this.serverInstance.logger.error(`Error migrating schema: ${error.message}`);
       }
       throw error;
+    }
+  }
+
+  async clearTable() {
+    logger.verbose(`[${this.name}] Clearing table '${this.tableName}'...`);
+    try {
+      const connection = await process.mysqlPool.getConnection();
+      await connection.query(`DELETE FROM \`${this.tableName}\``);
+      connection.release();
+      logger.verbose(`[${this.name}] Cleared table '${this.tableName}'.`);
+    } catch (error) {
+      logger.error(`[${this.name}] Failed to clear table: ${error.message}`);
     }
   }
 

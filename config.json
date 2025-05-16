@@ -78,7 +78,8 @@
       "ban": 3,
       "shutdown": 3,
       "restart": 3,
-      "kick": 3
+      "kick": 3,
+      "whois": 3
     }
   ],
   "plugins": [
@@ -91,6 +92,10 @@
       "plugin": "LogVoteKickStart",
       "enabled": false,
       "channel": ""
+    },
+    {
+      "plugin": "VoteLogs",
+      "enabled": true
     },
     {
       "plugin": "DBLog",

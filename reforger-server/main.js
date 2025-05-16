@@ -1,6 +1,7 @@
 const { EventEmitter } = require("events");
 const Rcon = require("./rcon");
 const LogParser = require("./log-parser/index");
+const logger = require("./logger/logger");
 
 global.serverPlayerCount = 0;
 global.serverFPS = 0;
@@ -47,8 +48,8 @@ class ReforgerServer extends EventEmitter {
         this.handleRconDisconnection();
       });
 
-      this.rcon.on("players", (updatedPlayers) => { 
-        this.players = updatedPlayers; 
+      this.rcon.on("players", (updatedPlayers) => {
+        this.players = updatedPlayers;
         this.emit("players", this.players);
       });
 
@@ -149,12 +150,14 @@ class ReforgerServer extends EventEmitter {
 
   setupPlayerEventHandlers() {
     this.logParser.on("playerJoined", (data) => {
-      const { playerName, playerIP, playerNumber, beGUID } = data;
+      const { playerName, playerIP, playerNumber, beGUID, steamID, device } = data;
       if (this.rcon) {
         const existing = this.rcon.players.find((p) => p.name === playerName);
         if (existing) {
           existing.ip = playerIP;
           if (beGUID) existing.beGUID = beGUID;
+          if (steamID !== undefined) existing.steamID = steamID;
+          if (device !== undefined) existing.device = device;
         } else {
           const newPlayer = {
             name: playerName,
@@ -162,9 +165,12 @@ class ReforgerServer extends EventEmitter {
             ip: playerIP,
           };
           if (beGUID) newPlayer.beGUID = beGUID;
+          if (steamID !== undefined) newPlayer.steamID = steamID;
+          if (device !== undefined) newPlayer.device = device;
           this.rcon.players.push(newPlayer);
         }
       }
+      logger.verbose(`Player joined: ${playerName} (#${playerNumber}) from ${playerIP} - Device: ${device || 'Unknown'}, SteamID: ${steamID || 'None'}, BE GUID: ${beGUID || 'Unknown'}`);
       this.emit("playerJoined", data);
     });
 

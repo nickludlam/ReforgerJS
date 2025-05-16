@@ -1,4 +1,5 @@
 const { EmbedBuilder } = require("discord.js");
+const e = require("express");
 
 module.exports = async (
   interaction,
@@ -234,6 +235,97 @@ module.exports = async (
         ephemeral: true,
       });
     }
+
+    if (subcommand === "whois") {
+      const playerInfo = interaction.options.getString("playerinfo");
+
+      if (!hasPermissionForSubcommand("whois")) {
+        return interaction.editReply({
+          content: "You do not have permission to use whois.",
+          ephemeral: true,
+        });
+      }
+
+
+      // look at the shape of playerInfo:
+      // If it's a Reforger UUID, it should be 8-4-4-4-12
+      // If it's blank, we need to get the entire player list
+      // If it's a name, we need to get the player list and find the name
+    
+      // Check if the playerInfo is a valid UUID
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        playerInfo
+      );
+      const isBlank = playerInfo === null || playerInfo === "";
+      // otherwise default to a name
+
+      let foundPlayer = null;
+      if (isUUID) {
+        foundPlayer = serverInstance.rcon.players.find(
+          (p) => p.uid === playerInfo
+        );
+      } else if (!isBlank) {
+        // Match on substring of name
+        const matchingPlayers = serverInstance.rcon.players.filter(
+          (p) => p.name.toLowerCase().includes(playerInfo.toLowerCase())
+        );
+        if (matchingPlayers.length > 1) {
+          return interaction.editReply({
+            content: `Multiple players found with the name "${playerInfo}". Please provide a more specific identifier.`,
+            ephemeral: true,
+          });
+        } else if (matchingPlayers.length === 1) {
+          foundPlayer = matchingPlayers[0];
+        } else {
+          return interaction.editReply({
+            content: `No player found with the name containing "${playerInfo}".`,
+            ephemeral: true,
+          });
+        }
+      } else {
+        // If it's blank, let's log the player list to the logger for debugging
+        const allPlayers = serverInstance.rcon.players;
+        logger.verbose("All players:");
+        allPlayers.forEach((player) => {
+          logger.verbose(`Player: ${JSON.stringify(player)}`);
+        });
+        return interaction.editReply({
+          content: "No player information provided. Please provide a UUID or name.",
+          ephemeral: true,
+        });
+      }
+
+      const displayKeys = {
+        name: "Player Name",
+        id: "RCON Player ID",
+        uid: "Reforger UUID",
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle("Player Information")
+        .setDescription(`🔍 Whois: ${playerInfo}`)
+        .addFields(
+          Object.entries(foundPlayer).map(([key, value]) => {
+            if (displayKeys[key]) {
+              return {
+                name: displayKeys[key],
+                value: value || "Not Found",
+                inline: true,
+              };
+            }
+            return null;
+          })
+        )
+        .setColor(0xFFA500)
+        .setFooter({ text: "ReforgerJS" });
+
+      return interaction.editReply({
+        embeds: [embed],
+        ephemeral: true,
+      });
+    }
+
+
 
     // If we get here, it's an unhandled subcommand
     return interaction.editReply({
