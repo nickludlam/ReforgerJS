@@ -122,7 +122,8 @@
       "enabled": false,
       "channel": "",
       "logAlts": true,
-      "logOnlyOnline": false
+      "logOnlyOnline": false,
+      "whitelistBEGUIDs": []
     },
     {
       "plugin": "ServerStatus",
