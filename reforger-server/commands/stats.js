@@ -7,7 +7,17 @@ module.exports = {
         .addStringOption(option =>
             option
                 .setName('identifier')
-                .setDescription('The UUID or UserName of the player')
+                .setDescription('The UUID or Username of the player')
                 .setRequired(true)
         )
+        .addStringOption(option =>
+                    option.setName('server')
+                        .setDescription('Which server to query')
+                        .setRequired(true)
+                        .addChoices(
+                            { name: 'All', value: 'all' },
+                            { name: 'Server 1', value: 'server1' },
+                            { name: 'Server 2', value: 'server2' },
+                        )
+                )
 };

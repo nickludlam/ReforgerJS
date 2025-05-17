@@ -116,7 +116,7 @@ class Rcon extends EventEmitter {
         }, 5000);
   
         this.client.sendCommand("players");
-        logger.info('Sent "players" command...');
+        // logger.info('Sent "players" command...');
       } else {
         logger.warn(
           'RCON not logged in or in error state; skipping "players" command.'

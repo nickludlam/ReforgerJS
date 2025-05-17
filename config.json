@@ -25,6 +25,7 @@
   },
   "consoleLogLevel": "info",
   "outputLogLevel": "info",
+  "outputLogsDir": "./logs",
   "connectors": {
     "discord": {
       "token": "",

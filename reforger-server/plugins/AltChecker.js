@@ -11,7 +11,7 @@ class AltChecker {
     this.channelId = null;
     this.logAlts = false;
     this.logOnlyOnline = false;
-    this.whitelistBEGUIDs = [];
+    this.whitelistBEGUIDs = new Set();
     this.playerIPCache = new Map();
     this.cacheTTL = 5 * 60 * 1000;
   }
@@ -41,9 +41,9 @@ class AltChecker {
       this.channelId = pluginConfig.channel;
       this.logAlts = pluginConfig.logAlts || false;
       this.logOnlyOnline = pluginConfig.logOnlyOnline || false;
-      this.whitelistBEGUIDs = pluginConfig.whitelistBEGUIDs ? pluginConfig.whitelistBEGUIDs.map(guid => guid.toLowerCase()) : [];
-      if (this.whitelistBEGUIDs.length > 0) {
-        logger.info(`[${this.name}] Loaded ${this.whitelistBEGUIDs.length} whitelist BE GUIDs.`);
+      this.whitelistBEGUIDs = pluginConfig.whitelistBEGUIDs ? new Set(pluginConfig.whitelistBEGUIDs.map(guid => guid.toLowerCase())) : this.whitelistBEGUIDs;
+      if (this.whitelistBEGUIDs.size > 0) {
+        logger.info(`[${this.name}] Loaded ${this.whitelistBEGUIDs.size} whitelist BE GUIDs.`);
       }
   
       const guild = await this.discordClient.guilds.fetch(this.config.connectors.discord.guildId, { cache: true, force: true });
@@ -87,7 +87,7 @@ class AltChecker {
     }
 
     // Early out by checking if the player is in the whitelist
-    if (this.whitelistBEGUIDs.length > 0 && this.whitelistBEGUIDs.includes(beGUID.toLowerCase())) {
+    if (this.whitelistBEGUIDs.size > 0 && this.whitelistBEGUIDs.has(beGUID.toLowerCase())) {
       logger.verbose(`[${this.name}] Player ${playerName} is in the whitelist. Skipping alt check.`);
       return;
     }

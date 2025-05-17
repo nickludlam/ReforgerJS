@@ -66,6 +66,12 @@ class LogVoteKickStart {
   }
 
   async handleVoteKickStart(data) {
+    const time = data?.time ? new Date(data.time) : null;
+    // If it's more than 5 seconds old, ignore it
+    if (time && Date.now() - time.getTime() > 5000) {
+      return;
+    }
+
     // Use new properties, with fallbacks if missing
     const voteOffenderName = data?.voteOffenderName || "Missing Value";
     const voteOffenderId = data?.voteOffenderId || "Missing Id";

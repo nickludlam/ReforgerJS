@@ -118,8 +118,14 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                     playerInfo += `\nSteamID: ${player.steamID || 'Not Found'}`;
                 }
                 
+                // Check if they are playing on this server
+                const playerList = serverInstance.players || [];
+                const isOnline = playerList.some((p) => p.beGUID?.trim().toLowerCase() === player.beGUID?.trim().toLowerCase());
+                const playerIsOnlineLine = isOnline ? 'Currently Online' : 'Currently Offline';
+                playerInfo += `\nStatus: ${playerIsOnlineLine}`;
+                
                 const playerData = {
-                    name: `Player ${index + 1}`,
+                    name: rows.length === 0 ? 'Player details' : `Player ${index + 1} details`,
                     value: playerInfo
                 };
 

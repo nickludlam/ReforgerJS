@@ -52,7 +52,8 @@ class VoteLogs {
         offenderUID VARCHAR(255) NULL,
         victimName VARCHAR(255) NULL,
         victimUID VARCHAR(255) NULL,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_offender_victim (offenderUID, victimUID)
       );
     `;
 
@@ -61,7 +62,8 @@ class VoteLogs {
         id INT AUTO_INCREMENT PRIMARY KEY,
         victimName VARCHAR(255) NULL,
         victimUID VARCHAR(255) NULL,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_victim (victimUID)
       );
     `;
 
@@ -114,6 +116,13 @@ class VoteLogs {
     }
 
     try {
+      const time = data.time ? new Date(data.time) : null;
+      // If this is more than 5 seconds in the past, ignore it
+      if (time && time.getTime() < Date.now() - 5000) {
+        logger.warn("Vote kick start time is more than 5 seconds in the past, ignoring");
+        return;
+      }
+
       const offenderName = data.voteOffenderName || null;
       const offenderId = data.voteOffenderId || null;
       const victimName = data.voteVictimName || null;
@@ -121,18 +130,19 @@ class VoteLogs {
       
       const offenderUID = this.findPlayerUID(offenderName, offenderId);
       const victimUID = this.findPlayerUID(victimName, victimId);
-
+    
       const insertQuery = `
         INSERT INTO VoteOffenders 
-        (offenderName, offenderUID, victimName, victimUID)
-        VALUES (?, ?, ?, ?);
+        (offenderName, offenderUID, victimName, victimUID, timestamp)
+        VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP));
       `;
 
       await process.mysqlPool.query(insertQuery, [
         offenderName,
         offenderUID,
         victimName,
-        victimUID
+        victimUID,
+        time
       ]);
       
       logger.info(`Vote kick initiated by ${offenderName} against ${victimName} logged to database`);

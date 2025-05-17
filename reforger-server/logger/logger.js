@@ -8,11 +8,10 @@ const config = require('../../config.json');
 
 const consoleLogLevel = config.consoleLogLevel || 'info';
 const outputLogLevel  = config.outputLogLevel  || 'info';
+const outputLogsDir = config.outputLogsDir || path.join(__dirname, 'logs');
 
-const logsDir = path.join(__dirname, 'logs');
-
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir);
+if (!fs.existsSync(outputLogsDir)) {
+  fs.mkdirSync(outputLogsDir);
 }
 
 const customFormat = printf(({ level, message, timestamp, stack }) => {
@@ -47,7 +46,7 @@ const logger = createLogger({
 
     new DailyRotateFile({
       level: outputLogLevel,
-      dirname: logsDir,
+      dirname: outputLogsDir,
       filename: 'logs-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
       maxSize: '100m',

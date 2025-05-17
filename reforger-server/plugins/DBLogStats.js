@@ -224,7 +224,6 @@ class DBLogStats {
     }
   }
 
-
   startLogging() {
     const intervalMs = this.logIntervalMinutes * 60 * 1000;
     // Run immediately, then on each interval.
@@ -234,7 +233,101 @@ class DBLogStats {
   }
 
   async logStats() {
+    const playerStatsHash = await this.collectStats();
+    if (!playerStatsHash || Object.keys(playerStatsHash).length === 0) {
+      logger.verbose(`[${this.name}] No player stats to log.`);
+      return;
+    }
+
+    const columns = [
+      'playerUID', 'server_name', 'level', 'level_experience', 'session_duration', 
+      'sppointss0', 'sppointss1', 'sppointss2', 'warcrimes', 'distance_walked', 
+      'kills', 'ai_kills', 'shots', 'grenades_thrown', 'friendly_kills', 
+      'friendly_ai_kills', 'deaths', 'distance_driven', 'points_as_driver_of_players', 
+      'players_died_in_vehicle', 'roadkills', 'friendly_roadkills', 'ai_roadkills', 
+      'friendly_ai_roadkills', 'distance_as_occupant', 'bandage_self', 
+      'bandage_friendlies', 'tourniquet_self', 'tourniquet_friendlies', 
+      'saline_self', 'saline_friendlies', 'morphine_self', 'morphine_friendlies', 
+      'warcrime_harming_friendlies', 'crime_acceleration', 'kick_session_duration', 
+      'kick_streak', 'lightban_session_duration', 'lightban_streak', 
+      'heavyban_kick_session_duration', 'heavyban_streak'
+    ];
+
+    const updateStatements = columns
+      .filter(col => col !== 'playerUID' && col !== 'server_name')
+      .map(col => `${col} = VALUES(${col})`)
+      .join(', ');
+
+    const BATCH_SIZE = 500;
+    const playerEntries = Object.entries(playerStatsHash);
+    for (let i = 0; i < playerEntries.length; i += BATCH_SIZE) {
+      const batch = playerEntries.slice(i, i + BATCH_SIZE);
+      const values = [];
+      const placeholders = [];
+      for (const [playerUID, stats] of batch) {
+        placeholders.push(`(${Array(columns.length).fill('?').join(', ')})`);
+        values.push(
+          playerUID,
+          this.serverName || null,
+          stats.level || 0,
+          stats.level_experience || 0,
+          stats.session_duration || 0,
+          stats.sppointss0 || 0,
+          stats.sppointss1 || 0,
+          stats.sppointss2 || 0,
+          stats.warcrimes || 0,
+          stats.distance_walked || 0,
+          stats.kills || 0,
+          stats.ai_kills || 0,
+          stats.shots || 0,
+          stats.grenades_thrown || 0,
+          stats.friendly_kills || 0,
+          stats.friendly_ai_kills || 0,
+          stats.deaths || 0,
+          stats.distance_driven || 0,
+          stats.points_as_driver_of_players || 0,
+          stats.players_died_in_vehicle || 0,
+          stats.roadkills || 0,
+          stats.friendly_roadkills || 0,
+          stats.ai_roadkills || 0,
+          stats.friendly_ai_roadkills || 0,
+          stats.distance_as_occupant || 0,
+          stats.bandage_self || 0,
+          stats.bandage_friendlies || 0,
+          stats.tourniquet_self || 0,
+          stats.tourniquet_friendlies || 0,
+          stats.saline_self || 0,
+          stats.saline_friendlies || 0,
+          stats.morphine_self || 0,
+          stats.morphine_friendlies || 0,
+          stats.warcrime_harming_friendlies || 0,
+          stats.crime_acceleration || 0,
+          stats.kick_session_duration || 0,
+          stats.kick_streak || 0,
+          stats.lightban_session_duration || 0,
+          stats.lightban_streak || 0,
+          stats.heavyban_kick_session_duration || 0,
+          stats.heavyban_streak || 0
+        );
+      }
+      const query = `
+        INSERT INTO ${this.tableName} (${columns.join(', ')})
+        VALUES ${placeholders.join(', ')}
+        ON DUPLICATE KEY UPDATE ${updateStatements}
+      `;
+      const connection = await process.mysqlPool.getConnection();
+      const [result] = await connection.execute(query, values);
+      await connection.release();
+    }
+    return true;
+  }
+
+  async collectStats() {
     logger.verbose(`[${this.name}] Initiating stats logging cycle.`);
+
+    // accumulate player stats as a dict mapping playerUID to stats
+    const playerStatData = {};
+
     try {
       const files = await fs.readdir(this.folderPath);
       const statFiles = files.filter(file => /^PlayerData\..+\.json$/.test(file));
@@ -315,159 +408,58 @@ class DBLogStats {
           heavyban_streak                 // 38 - How many times was the player heavybanned in a row after the last heavyban in a short succession
         ] = trimmedStats;
 
-        try {
-          const [rows] = await process.mysqlPool.query(
-            `SELECT * FROM \`${this.tableName}\` WHERE playerUID = ? AND server_name = ?`,
-            [playerUID, this.serverName]
-          );
-          if (rows.length > 0) {
-            const updateQuery = `
-              UPDATE \`${this.tableName}\`
-              SET level = ?,
-                  level_experience = ?,
-                  session_duration = ?,
-                  sppointss0 = ?,
-                  sppointss1 = ?,
-                  sppointss2 = ?,
-                  warcrimes = ?,
-                  distance_walked = ?,
-                  kills = ?,
-                  ai_kills = ?,
-                  shots = ?,
-                  grenades_thrown = ?,
-                  friendly_kills = ?,
-                  friendly_ai_kills = ?,
-                  deaths = ?,
-                  distance_driven = ?,
-                  points_as_driver_of_players = ?,
-                  players_died_in_vehicle = ?,
-                  roadkills = ?,
-                  friendly_roadkills = ?,
-                  ai_roadkills = ?,
-                  friendly_ai_roadkills = ?,
-                  distance_as_occupant = ?,
-                  bandage_self = ?,
-                  bandage_friendlies = ?,
-                  tourniquet_self = ?,
-                  tourniquet_friendlies = ?,
-                  saline_self = ?,
-                  saline_friendlies = ?,
-                  morphine_self = ?,
-                  morphine_friendlies = ?,
-                  warcrime_harming_friendlies = ?,
-                  crime_acceleration = ?,
-                  kick_session_duration = ?,
-                  kick_streak = ?,
-                  lightban_session_duration = ?,
-                  lightban_streak = ?,
-                  heavyban_kick_session_duration = ?,
-                  heavyban_streak = ?
-              WHERE playerUID = ? AND server_name = ?
-            `;
-            const updateValues = [
-              level,
-              level_experience,
-              session_duration,
-              sppointss0,
-              sppointss1,
-              sppointss2,
-              warcrimes,
-              distance_walked,
-              kills,
-              ai_kills,
-              shots,
-              grenades_thrown,
-              friendly_kills,
-              friendly_ai_kills,
-              deaths,
-              distance_driven,
-              points_as_driver_of_players,
-              players_died_in_vehicle,
-              roadkills,
-              friendly_roadkills,
-              ai_roadkills,
-              friendly_ai_roadkills,
-              distance_as_occupant,
-              bandage_self,
-              bandage_friendlies,
-              tourniquet_self,
-              tourniquet_friendlies,
-              saline_self,
-              saline_friendlies,
-              morphine_self,
-              morphine_friendlies,
-              warcrime_harming_friendlies,
-              crime_acceleration,
-              kick_session_duration,
-              kick_streak,
-              lightban_session_duration,
-              lightban_streak,
-              heavyban_kick_session_duration,
-              heavyban_streak,
-              playerUID,
-              this.serverName
-            ];
-            await process.mysqlPool.query(updateQuery, updateValues);
-          } else {
-            const insertQuery = `
-              INSERT INTO \`${this.tableName}\`
-              (playerUID, server_name, level, level_experience, session_duration, sppointss0, sppointss1, sppointss2, warcrimes, distance_walked, kills, ai_kills, shots, grenades_thrown, friendly_kills, friendly_ai_kills, deaths, distance_driven, points_as_driver_of_players, players_died_in_vehicle, roadkills, friendly_roadkills, ai_roadkills, friendly_ai_roadkills, distance_as_occupant, bandage_self, bandage_friendlies, tourniquet_self, tourniquet_friendlies, saline_self, saline_friendlies, morphine_self, morphine_friendlies, warcrime_harming_friendlies, crime_acceleration, kick_session_duration, kick_streak, lightban_session_duration, lightban_streak, heavyban_kick_session_duration, heavyban_streak)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            const insertValues = [
-              playerUID,
-              this.serverName,
-              level,
-              level_experience,
-              session_duration,
-              sppointss0,
-              sppointss1,
-              sppointss2,
-              warcrimes,
-              distance_walked,
-              kills,
-              ai_kills,
-              shots,
-              grenades_thrown,
-              friendly_kills,
-              friendly_ai_kills,
-              deaths,
-              distance_driven,
-              points_as_driver_of_players,
-              players_died_in_vehicle,
-              roadkills,
-              friendly_roadkills,
-              ai_roadkills,
-              friendly_ai_roadkills,
-              distance_as_occupant,
-              bandage_self,
-              bandage_friendlies,
-              tourniquet_self,
-              tourniquet_friendlies,
-              saline_self,
-              saline_friendlies,
-              morphine_self,
-              morphine_friendlies,
-              warcrime_harming_friendlies,
-              crime_acceleration,
-              kick_session_duration,
-              kick_streak,
-              lightban_session_duration,
-              lightban_streak,
-              heavyban_kick_session_duration,
-              heavyban_streak
-            ];
-            await process.mysqlPool.query(insertQuery, insertValues);
-          }
-        } catch (dbError) {
-          logger.error(`[${this.name}] Database error processing UID ${playerUID}: ${dbError.message}`);
-        }
+        // Now place all these stats into the playerStatData dict keyed by playerUID
+        playerStatData[playerUID] = {
+          level,
+          level_experience,
+          session_duration,
+          sppointss0,
+          sppointss1,
+          sppointss2,
+          warcrimes,
+          distance_walked,
+          kills,
+          ai_kills,
+          shots,
+          grenades_thrown,
+          friendly_kills,
+          friendly_ai_kills,
+          deaths,
+          distance_driven,
+          points_as_driver_of_players,
+          players_died_in_vehicle,
+          roadkills,
+          friendly_roadkills,
+          ai_roadkills,
+          friendly_ai_roadkills,
+          distance_as_occupant,
+          bandage_self,
+          bandage_friendlies,
+          tourniquet_self,
+          tourniquet_friendlies,
+          saline_self,
+          saline_friendlies,
+          morphine_self,
+          morphine_friendlies,
+          warcrime_harming_friendlies,
+          crime_acceleration,
+          kick_session_duration,
+          kick_streak,
+          lightban_session_duration,
+          lightban_streak,
+          heavyban_kick_session_duration,
+          heavyban_streak
+        };
       }
-      logger.info(`[${this.name}] Stats logging cycle completed.`);
     } catch (error) {
       logger.error(`[${this.name}] Error during stats logging: ${error.message}`);
+      return;
     }
+
+    logger.verbose(`[${this.name}] Collected stats for ${Object.keys(playerStatData).length} players.`);
+    return playerStatData;
   }
+
 
   async cleanup() {
     logger.verbose(`[${this.name}] Cleaning up...`);
@@ -477,6 +469,7 @@ class DBLogStats {
     }
     logger.info(`[${this.name}] Cleanup completed.`);
   }
+  
 }
 
 module.exports = DBLogStats;
