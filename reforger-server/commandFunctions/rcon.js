@@ -1,5 +1,6 @@
-const { EmbedBuilder } = require("discord.js");
+const { EmbedBuilder, MessageFlags } = require("discord.js");
 const e = require("express");
+const logger = require("../logger/logger");
 
 module.exports = async (
   interaction,
@@ -27,7 +28,7 @@ module.exports = async (
   if (!rconConfig) {
     return interaction.reply({
       content: "RCON command configuration is missing.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -65,7 +66,7 @@ module.exports = async (
 
   // Handle the interaction state
   if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   }
 
   try {
@@ -73,7 +74,7 @@ module.exports = async (
     if (!serverInstance.rcon || !serverInstance.rcon.isConnected) {
       return interaction.editReply({
         content: "RCON is not connected to the server.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -84,14 +85,14 @@ module.exports = async (
       if (!hasPermissionForSubcommand("restart")) {
         return interaction.editReply({
           content: "You do not have permission to restart the server.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
       if (confirm !== "CONFIRM") {
         return interaction.editReply({
           content: "Type CONFIRM to proceed with a restart.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -107,7 +108,7 @@ module.exports = async (
       return interaction.editReply({
         content:
           "Server restart command sent. The server will restart shortly.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -118,14 +119,14 @@ module.exports = async (
       if (!hasPermissionForSubcommand("shutdown")) {
         return interaction.editReply({
           content: "You do not have permission to shut down the server.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
       if (confirm !== "CONFIRM") {
         return interaction.editReply({
           content: "Type CONFIRM to proceed with a shutdown.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -141,7 +142,7 @@ module.exports = async (
       return interaction.editReply({
         content:
           "Server shutdown command sent. The server will shut down shortly.",
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -152,14 +153,14 @@ module.exports = async (
       if (!hasPermissionForSubcommand("kick")) {
         return interaction.editReply({
           content: "You do not have permission to kick a player.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
       if (!playerId) {
         return interaction.editReply({
           content: "Player ID is required.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -177,7 +178,7 @@ module.exports = async (
 
       return interaction.editReply({
         content: `Player with ID ${playerId} has been kicked from the server.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -191,14 +192,14 @@ module.exports = async (
       if (!hasPermissionForSubcommand("ban")) {
         return interaction.editReply({
           content: "You do not have permission to ban players.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
       if (!playerId) {
         return interaction.editReply({
           content: "Player ID is required.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -209,7 +210,7 @@ module.exports = async (
         if (!duration) {
           return interaction.editReply({
             content: "Ban creation requires a duration (in seconds).",
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
           });
         }
 
@@ -232,7 +233,7 @@ module.exports = async (
 
       return interaction.editReply({
         content: `RCON command sent: \`${rconCommand}\``,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -242,7 +243,7 @@ module.exports = async (
       if (!hasPermissionForSubcommand("whois")) {
         return interaction.editReply({
           content: "You do not have permission to use whois.",
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -259,41 +260,35 @@ module.exports = async (
       const isBlank = playerInfo === null || playerInfo === "";
       // otherwise default to a name
 
-      let foundPlayer = null;
-      if (isUUID) {
-        foundPlayer = serverInstance.rcon.players.find(
-          (p) => p.uid === playerInfo
-        );
-      } else if (!isBlank) {
-        // Match on substring of name
-        const matchingPlayers = serverInstance.rcon.players.filter(
-          (p) => p.name.toLowerCase().includes(playerInfo.toLowerCase())
-        );
-        if (matchingPlayers.length > 1) {
-          return interaction.editReply({
-            content: `Multiple players found with the name "${playerInfo}". Please provide a more specific identifier.`,
-            ephemeral: true,
-          });
-        } else if (matchingPlayers.length === 1) {
-          foundPlayer = matchingPlayers[0];
-        } else {
-          return interaction.editReply({
-            content: `No player found with the name containing "${playerInfo}".`,
-            ephemeral: true,
-          });
+      logger.verbose(
+        `Player info: ${playerInfo}, isUUID: ${isUUID}, isBlank: ${isBlank}`
+      );
+
+      const matchingPlayers = serverInstance.rcon.players.filter((p) => {
+        if (isUUID) {
+          return p.uid === playerInfo;
+        } else if (!isBlank) {
+          // Match on substring of name
+          return p.name.toLowerCase().includes(playerInfo.toLowerCase());
         }
-      } else {
-        // If it's blank, let's log the player list to the logger for debugging
-        const allPlayers = serverInstance.rcon.players;
-        logger.verbose("All players:");
-        allPlayers.forEach((player) => {
-          logger.verbose(`Player: ${JSON.stringify(player)}`);
-        });
+        return true; // If it's blank, we want all players
+      });
+
+      if (matchingPlayers.length === 0) {
         return interaction.editReply({
-          content: "No player information provided. Please provide a UUID or name.",
-          ephemeral: true,
+          content: `No player found with the identifier "${playerInfo}".`,
+          flags: MessageFlags.Ephemeral,
+        });
+      } else if (matchingPlayers.length > 1) {
+        return interaction.editReply({
+          content: `Multiple players found with the identifier "${playerInfo}". Please provide a more specific identifier.`,
+          flags: MessageFlags.Ephemeral,
         });
       }
+
+      foundPlayer = matchingPlayers[0];
+
+      // If we found a single match, use that
 
       const displayKeys = {
         name: "Player Name",
@@ -301,42 +296,49 @@ module.exports = async (
         uid: "Reforger UUID",
       }
 
+      // assemble a key-value pair of the player info by enumerating the displayKeys
+      const messageFields = Object.entries(foundPlayer).map(([key, value]) => {
+        if (displayKeys[key]) {
+          return {
+            name: displayKeys[key],
+            value: value !== undefined && value !== null ? String(value) : "Not Found",
+            inline: false,
+          };
+        }
+        return null;
+      }).filter((field) => field !== null);
+
+      logger.verbose(
+        `Player info: ${JSON.stringify(foundPlayer, null, 2)}`
+      );
+
+      logger.verbose(
+        `Message fields: ${JSON.stringify(messageFields, null, 2)}`
+      );
+ 
       const embed = new EmbedBuilder()
         .setTitle("Player Information")
         .setDescription(`🔍 Whois: ${playerInfo}`)
-        .addFields(
-          Object.entries(foundPlayer).map(([key, value]) => {
-            if (displayKeys[key]) {
-              return {
-                name: displayKeys[key],
-                value: value || "Not Found",
-                inline: true,
-              };
-            }
-            return null;
-          })
-        )
+        .addFields(messageFields)
         .setColor(0xFFA500)
         .setFooter({ text: "ReforgerJS" });
 
       return interaction.editReply({
         embeds: [embed],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
-
-
 
     // If we get here, it's an unhandled subcommand
     return interaction.editReply({
       content: `Unknown subcommand: ${subcommand}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
     logger.error(`[RCON Command] Error: ${error.message}`);
     return interaction.editReply({
       content: "An error occurred while executing the RCON command.",
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 };
