@@ -1,5 +1,6 @@
 const mysql = require("mysql2/promise");
 const { EmbedBuilder } = require("discord.js");
+const logger = require("../logger/logger");
 
 class AltChecker {
   constructor(config) {
@@ -63,7 +64,8 @@ class AltChecker {
         return;
       }
   
-      if (!this.channelOrThread.permissionsFor(this.discordClient.user).has("SendMessages")) {
+      const permissions = await this.channelOrThread.permissionsFor(this.discordClient.user)
+      if (permissions === null || !permissions.has("SendMessages")) {
         logger.warn(`[${this.name}] Bot does not have permission to send messages in the channel or thread. Plugin disabled.`);
         return;
       }
@@ -79,6 +81,12 @@ class AltChecker {
   
 
   async handlePlayerJoined(player) {
+    const eventTime = player?.time ? new Date(player.time) : null;
+    // If it's more than 5 seconds old, ignore it
+    if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
+      return;
+    }
+
     const { playerIP, playerName, beGUID } = player;
 
     if (!playerIP) {

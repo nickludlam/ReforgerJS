@@ -8,18 +8,6 @@ module.exports = async (
   discordClient,
   extraData = {}
 ) => {
-  // Get the server number from the command options
-  const requestedServerNumber = interaction.options.getInteger("server");
-  const currentServerNumber = serverInstance.config.server.id;
-  
-  // Check if this is the correct server instance to handle the command
-  if (requestedServerNumber !== currentServerNumber) {
-    logger.info(
-      `[RCON Command] Ignoring command for server ${requestedServerNumber} (this is server ${currentServerNumber})`
-    );
-    return;
-  }
-
   // Get the subcommand and options
   const subcommand = interaction.options.getSubcommand();
   const config = serverInstance.config;
@@ -246,7 +234,6 @@ module.exports = async (
           flags: MessageFlags.Ephemeral,
         });
       }
-
 
       // look at the shape of playerInfo:
       // If it's a Reforger UUID, it should be 8-4-4-4-12

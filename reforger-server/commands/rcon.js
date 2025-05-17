@@ -8,11 +8,6 @@ module.exports = {
             subcommand
                 .setName('restart')
                 .setDescription('Restart the server')
-                .addIntegerOption(option =>
-                    option.setName('server')
-                        .setDescription('Server Number')
-                        .setRequired(true)
-                )
                 .addStringOption(option =>
                     option.setName('confirm')
                         .setDescription('Type CONFIRM to proceed')
@@ -23,11 +18,6 @@ module.exports = {
             subcommand
                 .setName('shutdown')
                 .setDescription('Shutdown the server')
-                .addIntegerOption(option =>
-                    option.setName('server')
-                        .setDescription('Server Number')
-                        .setRequired(true)
-                )
                 .addStringOption(option =>
                     option.setName('confirm')
                         .setDescription('Type CONFIRM to proceed')
@@ -38,64 +28,49 @@ module.exports = {
             subcommand
                 .setName('whois')
                 .setDescription('Queries the player list for a specific player')
-                .addIntegerOption(option =>
-                    option.setName('server')
-                        .setDescription('Server Number')
-                        .setRequired(true)
-                )
                 .addStringOption(option =>
                     option.setName('playerinfo')
                         .setDescription('Either a UUID or a Name')
-                        .setRequired(false)
-                )
-        )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('kick')
-                .setDescription('Kick a player')
-                .addIntegerOption(option =>
-                    option.setName('server')
-                        .setDescription('Server Number')
-                        .setRequired(true)
-                )
-                .addStringOption(option =>
-                    option.setName('id')
-                        .setDescription('Player ID')
                         .setRequired(true)
                 )
         )
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('ban')
-                .setDescription('Manage player bans')
-                .addStringOption(option =>
-                    option.setName('action')
-                        .setDescription('Create or remove a ban')
-                        .setRequired(true)
-                        .addChoices(
-                            { name: 'Create', value: 'create' },
-                            { name: 'Remove', value: 'remove' }
-                        )
-                )
-                .addIntegerOption(option =>
-                    option.setName('server')
-                        .setDescription('Server Number')
-                        .setRequired(true)
-                )
-                .addStringOption(option =>
-                    option.setName('id')
-                        .setDescription('Player ID')
-                        .setRequired(true)
-                )
-                .addIntegerOption(option =>
-                    option.setName('duration')
-                        .setDescription('Ban duration in seconds (for create)')
-                        .setRequired(false)
-                )
-                .addStringOption(option =>
-                    option.setName('reason')
-                        .setDescription('Reason for ban (optional)')
-                        .setRequired(false)
-                )
-        )
+        // .addSubcommand(subcommand =>
+        //     subcommand
+        //         .setName('kick')
+        //         .setDescription('Kick a player')
+        //         .addStringOption(option =>
+        //             option.setName('id')
+        //                 .setDescription('Player ID')
+        //                 .setRequired(true)
+        //         )
+        // )
+        // .addSubcommand(subcommand =>
+        //     subcommand
+        //         .setName('ban')
+        //         .setDescription('Manage player bans')
+        //         .addStringOption(option =>
+        //             option.setName('action')
+        //                 .setDescription('Create or remove a ban')
+        //                 .setRequired(true)
+        //                 .addChoices(
+        //                     { name: 'Create', value: 'create' },
+        //                     { name: 'Remove', value: 'remove' }
+        //                 )
+        //         )
+        //         .addStringOption(option =>
+        //             option.setName('id')
+        //                 .setDescription('Player ID')
+        //                 .setRequired(true)
+        //         )
+        //         .addIntegerOption(option =>
+        //             option.setName('duration')
+        //                 .setDescription('Ban duration in seconds (for create)')
+        //                 .setRequired(false)
+        //         )
+        //         .addStringOption(option =>
+        //             option.setName('reason')
+        //                 .setDescription('Reason for ban (optional)')
+        //                 .setRequired(false)
+        //         )
+        // )
 };

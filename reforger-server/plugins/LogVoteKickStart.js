@@ -66,9 +66,9 @@ class LogVoteKickStart {
   }
 
   async handleVoteKickStart(data) {
-    const time = data?.time ? new Date(data.time) : null;
+    const eventTime = data?.time ? new Date(data.time) : null;
     // If it's more than 5 seconds old, ignore it
-    if (time && Date.now() - time.getTime() > 5000) {
+    if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
       return;
     }
 

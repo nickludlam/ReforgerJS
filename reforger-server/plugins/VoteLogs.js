@@ -116,10 +116,9 @@ class VoteLogs {
     }
 
     try {
-      const time = data.time ? new Date(data.time) : null;
-      // If this is more than 5 seconds in the past, ignore it
-      if (time && time.getTime() < Date.now() - 5000) {
-        logger.warn("Vote kick start time is more than 5 seconds in the past, ignoring");
+      const eventTime = data?.time ? new Date(data.time) : null;
+      // If it's more than 5 seconds old, ignore it
+      if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
         return;
       }
 
@@ -142,7 +141,7 @@ class VoteLogs {
         offenderUID,
         victimName,
         victimUID,
-        time
+        eventTime
       ]);
       
       logger.info(`Vote kick initiated by ${offenderName} against ${victimName} logged to database`);

@@ -210,11 +210,16 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             });
         }
 
+        // TODO: Improve this to work with the command configuration in commands/stats.js
+        const serverDisplayName = filterServerName.replace(/([a-z])([0-9])/g, '$1 $2');
+
+        const titleSuffix = filterServerName === 'all' ? ' across all servers' : ` for ${serverDisplayName}`;
+
         const embed = new EmbedBuilder()
-            .setTitle("📊 Player Stats")
+            .setTitle("📊 Player Stats" + titleSuffix)
             .setDescription(`**User:** ${playerName}\n**UUID:** ${playerUID}\n---------------\n`)
             .setColor("#FFA500")
-            .setFooter({ text: "Reforger Stats" })
+            .setFooter({ text: "Stats collected by ReforgerJS" })
             .addFields(fields);
 
         await interaction.editReply({ embeds: [embed] });
