@@ -6,6 +6,7 @@
     "queryPort": 1111,
     "rconPort": 1111,
     "rconPassword": "PASSWORD",
+    "reloadCommandsOnStartup": true,
     "logReaderMode": "tail",
     "filename": "console.log",
     "backfill": true,
