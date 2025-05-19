@@ -1,6 +1,7 @@
 const mysql = require("mysql2/promise");
 const { EmbedBuilder } = require("discord.js");
 const logger = require("../logger/logger");
+const { escapeMarkdown } = require('../helpers');
 
 class AltChecker {
   constructor(config) {
@@ -142,6 +143,14 @@ class AltChecker {
       if (this.logOnlyOnline && !atLeastOneOnline) {
         return;
       }
+
+      // Ensure fields we're adding have their values escaped so we don't have markdown issues
+      playerName = escapeMarkdown(playerName);
+      altAccounts.forEach((alt) => {
+        if (alt.playerName) {
+          alt.playerName = escapeMarkdown(alt.playerName);
+        }
+      });
 
       if (this.logAlts) {
         const embed = new EmbedBuilder()

@@ -1,4 +1,5 @@
 const mysql = require("mysql2/promise");
+const { escapeMarkdown } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
     try {
@@ -108,7 +109,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             };
 
             rows.forEach((player, index) => {
-                let playerInfo = `Name: ${player.playerName || 'Missing Player Name'}\n` +
+                let playerInfo = `Name: ${escapeMarkdown(player.playerName) || 'Missing Player Name'}\n` +
                                `IP Address: ${player.playerIP || 'Missing IP Address'}\n` +
                                `Reforger UUID: ${player.playerUID || 'Missing UUID'}\n` +
                                `be GUID: ${player.beGUID || 'Missing beGUID'}\n` +
