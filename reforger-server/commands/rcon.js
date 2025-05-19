@@ -29,8 +29,8 @@ module.exports = {
                 .setName('whois')
                 .setDescription('Queries the player list for a specific player')
                 .addStringOption(option =>
-                    option.setName('playerinfo')
-                        .setDescription('Either a UUID or a Name')
+                    option.setName('identifier')
+                        .setDescription('Either a Reforger ID or a player name')
                         .setRequired(true)
                 )
         )

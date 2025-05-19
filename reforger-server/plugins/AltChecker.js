@@ -1,7 +1,7 @@
 const mysql = require("mysql2/promise");
 const { EmbedBuilder } = require("discord.js");
 const logger = require("../logger/logger");
-const { escapeMarkdown } = require('../helpers');
+const { escapeMarkdown, parseLogDate } = require('../../helpers');
 
 class AltChecker {
   constructor(config) {
@@ -81,8 +81,9 @@ class AltChecker {
   }
   
 
+
   async handlePlayerJoined(player) {
-    const eventTime = player?.time ? new Date(player.time) : null;
+    const eventTime = player?.time ? parseLogDate(player.time) : null;
     // If it's more than 5 seconds old, ignore it
     if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
       return;
@@ -144,21 +145,13 @@ class AltChecker {
         return;
       }
 
-      // Ensure fields we're adding have their values escaped so we don't have markdown issues
-      playerName = escapeMarkdown(playerName);
-      altAccounts.forEach((alt) => {
-        if (alt.playerName) {
-          alt.playerName = escapeMarkdown(alt.playerName);
-        }
-      });
-
       if (this.logAlts) {
         const embed = new EmbedBuilder()
           .setTitle("Alt Accounts Detected")
           .setDescription(`**Server:** ${this.config.server.name}\n**📡 IP Address:** ${playerIP}`)
           .setColor("#FFA500")
           .addFields(
-            { name: "Usernames", value: [`${playerName}`, ...altAccounts.map((alt) => `${alt.playerName || "Unknown"}`)].join("\n"), inline: true },
+            { name: "Usernames", value: [`${escapeMarkdown(playerName)}`, ...altAccounts.map((alt) => `${escapeMarkdown(alt.playerName) || "Unknown"}`)].join("\n"), inline: true },
             { name: "Reforger BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
             { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
           )

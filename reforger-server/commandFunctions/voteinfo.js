@@ -1,8 +1,9 @@
 const { EmbedBuilder } = require('discord.js');
 const mysql = require('mysql2/promise');
+const { escapeMarkdown } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
-    const uuid = extraData.uuid;
+    const uuid = extraData.reforgerid;
     const user = interaction.user;
     logger.info(`[VoteInfo Command] User: ${user.username} (ID: ${user.id}) requested vote info for UUID: ${uuid}`);
 
@@ -87,7 +88,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
         const embed = new EmbedBuilder()
             .setTitle("🗳️ Player Vote Information")
-            .setDescription(`**Player:** ${playerName}\n**UUID:** ${uuid}\n---------------\n`)
+            .setDescription(`**Player:** ${escapeMarkdown(playerName)}\n**UUID:** ${uuid}\n---------------\n`)
             .setColor("#FFA500")
             .setFooter({ text: "Reforger Vote Info" });
 
@@ -105,7 +106,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         if (topVictims.length > 0) {
             let victimsText = '';
             topVictims.forEach((victim, index) => {
-                victimsText += `${index + 1}. ${victim.victimName || 'Unknown'}: ${victim.count} vote${victim.count !== 1 ? 's' : ''}\n`;
+                victimsText += `${index + 1}. ${escapeMarkdown(victim.victimName) || 'Unknown'}: ${victim.count} vote${victim.count !== 1 ? 's' : ''}\n`;
             });
             
             embed.addFields({
@@ -122,7 +123,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         if (topVoters.length > 0) {
             let votersText = '';
             topVoters.forEach((voter, index) => {
-                votersText += `${index + 1}. ${voter.offenderName || 'Unknown'}: ${voter.count} vote${voter.count !== 1 ? 's' : ''}\n`;
+                votersText += `${index + 1}. ${escapeMarkdown(voter.offenderName) || 'Unknown'}: ${voter.count} vote${voter.count !== 1 ? 's' : ''}\n`;
             });
             
             embed.addFields({

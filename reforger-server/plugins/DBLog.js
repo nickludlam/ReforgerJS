@@ -1,4 +1,6 @@
 const mysql = require("mysql2/promise");
+const logger = require("../logger/logger");
+const { parseLogDate } = require("../../helpers");
 
 class DBLog {
   constructor(config) {
@@ -13,6 +15,7 @@ class DBLog {
   }
 
   async prepareToMount(serverInstance) {
+    logger.verbose(`[${this.name}] Preparing to mount...`);
     await this.cleanup();
     this.serverInstance = serverInstance;
 
@@ -43,10 +46,16 @@ class DBLog {
       await this.setupSchema();
       await this.migrateSchema();
       this.startLogging();
+
+      // We also want to listen for playerJoined and playerLeft events
+      this.serverInstance.removeListener("playerJoined", this.handlePlayerJoined);
+      this.serverInstance.on("playerJoined", this.handlePlayerJoined.bind(this));
+
       this.isInitialized = true;
+      logger.info(`[${this.name}] Initialized: Listening to playerJoined events and logging players every ${this.logIntervalMinutes} minutes.`);
     } catch (error) {
       if (serverInstance.logger) {
-        serverInstance.logger.error(`Error initializing DBLog: ${error.message}`);
+        logger.error(`Error initializing DBLog: ${error.message}`);
       }
     }
   }
@@ -61,7 +70,7 @@ class DBLog {
         beGUID VARCHAR(255) NULL,
         steamID VARCHAR(255) NULL,
         device VARCHAR(50) NULL,
-        created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        lastSeen TIMESTAMP NULL
       );
     `;
 
@@ -96,20 +105,39 @@ class DBLog {
         alterQueries.push('ADD COLUMN device VARCHAR(50) NULL');
       }
       
+      // Add an updated datetime column if it doesn't exist
+      if (!columnNames.includes('lastSeen')) {
+        alterQueries.push('ADD COLUMN lastSeen TIMESTAMP NULL');
+      }
+      
       if (alterQueries.length > 0) {
         const alterQuery = `ALTER TABLE players ${alterQueries.join(', ')}`;
         await connection.query(alterQuery);
         
-        if (this.serverInstance.logger) {
-          this.serverInstance.logger.info(`DBLog: Migrated players table with new columns: ${alterQueries.join(', ')}`);
-        }
+        logger.info(`DBLog: Migrated players table with new columns: ${alterQueries.join(', ')}`);
+      }
+
+      // Also check the keys
+      const [indexes] = await connection.query(`
+        SELECT INDEX_NAME
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'players'
+        AND COLUMN_NAME = 'beGUID'
+        AND NON_UNIQUE = 0
+      `);
+
+      // If there is no key on beGUID, add it
+      if (indexes.length === 0) {
+        await connection.query(`
+          ALTER TABLE players ADD UNIQUE INDEX beGUID (beGUID)
+        `);
+        logger.info(`Added index on beGUID to players`);
       }
       
       connection.release();
     } catch (error) {
-      if (this.serverInstance.logger) {
-        this.serverInstance.logger.error(`Error migrating schema: ${error.message}`);
-      }
+      logger.error(`Error migrating schema: ${error.message}`);
       throw error;
     }
   }
@@ -139,7 +167,7 @@ class DBLog {
 
     try {
       if (player.device === 'Console' && player.steamID) {
-        this.serverInstance.logger.warn(`Unexpected: Console player ${player.name} has a steamID: ${player.steamID}. This shouldn't happen.`);
+        logger.warn(`Unexpected: Console player ${player.name} has a steamID: ${player.steamID}. This shouldn't happen.`);
       }
 
       if (this.playerCache.has(player.uid)) {
@@ -188,6 +216,7 @@ class DBLog {
         }
 
         if (needsUpdate) {
+
           const setClause = Object.keys(updateFields)
             .map((field) => `${field} = ?`)
             .join(", ");
@@ -199,8 +228,8 @@ class DBLog {
         }
       } else {
         const insertQuery = `
-          INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen)
+          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `;
         await process.mysqlPool.query(insertQuery, [
           player.name || null,
@@ -224,11 +253,29 @@ class DBLog {
         this.playerCache.delete(player.uid);
       }, this.cacheTTL);
     } catch (error) {
-      if (this.serverInstance.logger) {
-        this.serverInstance.logger.error(`Error processing player ${player.name}: ${error.message}`);
-      }
+      logger.error(`Error processing player ${player.name}: ${error.message}`);
     }
   }
+
+  async handlePlayerJoined(player) {
+    const eventTime = player?.time ? parseLogDate(player.time) : null;
+    // If it's more than 5 seconds old, ignore it
+    if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
+      return;
+    }
+
+    if (!player.beGUID) {
+      logger.warn(`[${this.name}] Player joined without a BE GUID: ${player.name}`);
+      return;
+    }
+
+    // Set the lastSeen timestamp to the current timestamp
+    const updateQuery = `UPDATE players SET lastSeen = CURRENT_TIMESTAMP WHERE beGUID = ?`;
+    const connection = await process.mysqlPool.getConnection();
+    await connection.query(updateQuery, [player.beGUID]);
+    connection.release();
+  }
+
 
   async cleanup() {
     if (this.interval) {

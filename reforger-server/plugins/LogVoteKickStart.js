@@ -1,4 +1,5 @@
 const { EmbedBuilder } = require("discord.js");
+const { parseLogDate } = require("../../helpers");
 
 class LogVoteKickStart {
   constructor(config) {
@@ -66,7 +67,7 @@ class LogVoteKickStart {
   }
 
   async handleVoteKickStart(data) {
-    const eventTime = data?.time ? new Date(data.time) : null;
+    const eventTime = data?.time ? parseLogDate(data.time) : null;
     // If it's more than 5 seconds old, ignore it
     if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
       return;

@@ -1,4 +1,5 @@
 const mysql = require("mysql2/promise");
+const { parseLogDate } = require("../../helpers");
 
 class VoteLogs {
   constructor(config) {
@@ -116,7 +117,7 @@ class VoteLogs {
     }
 
     try {
-      const eventTime = data?.time ? new Date(data.time) : null;
+      const eventTime = data?.time ? parseLogDate(data.time) : null;
       // If it's more than 5 seconds old, ignore it
       if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
         return;

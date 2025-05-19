@@ -1,5 +1,5 @@
 const mysql = require("mysql2/promise");
-const { escapeMarkdown } = require('../../helpers');
+const { escapeMarkdown, classifyUserQueryInfo } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
     try {
@@ -8,10 +8,9 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         }
 
         const user = interaction.user;
-        const identifier = extraData.identifier;
-        const value = extraData.value;
+        const identifier = extraData.identifier.trim();
         
-        logger.info(`[Whois Command] User: ${user.username} (ID: ${user.id}) used /whois with Identifier: ${identifier}, Value: ${value}`);
+        logger.info(`[Whois Command] User: ${user.username} (ID: ${user.id}) used /whois with identifier: ${identifier}`);
 
         if (!serverInstance.config.connectors ||
             !serverInstance.config.connectors.mysql ||
@@ -27,26 +26,17 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        const fieldMap = {
-            beguid: 'beGUID',
-            uuid: 'playerUID',
-            name: 'playerName',
-            ip: 'playerIP',
-            steamid: 'steamID'
-        };
-
-        const dbField = fieldMap[identifier.toLowerCase()];
-
-        if (!dbField) {
-            await interaction.editReply(`Invalid identifier provided: ${identifier}.`);
+        if (identifier.length < 3) {
+            await interaction.editReply(`Identifier ${identifier} is too short. Please provide at least 3 characters.`);
             return;
         }
 
-        if (identifier.toLowerCase() === 'steamid') {
-            if (!/^\d{17}$/.test(value)) {
-                await interaction.editReply('Invalid SteamID format. SteamID should be 17 digits long.');
-                return;
-            }
+        const dbField = classifyUserQueryInfo(identifier);
+
+        const validDBFields = ['playerName', 'playerIP', 'playerUID', 'beGUID', 'steamID'];
+        if (!validDBFields.includes(dbField)) {
+            await interaction.editReply(`Invalid identifier provided: ${identifier}.`);
+            return;
         }
 
         try {
@@ -54,23 +44,23 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             let params;
             
             if (dbField === 'playerName') {
-                query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device FROM players WHERE ${dbField} LIKE ?`;
-                params = [`%${value}%`];
+                query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen FROM players WHERE ${dbField} LIKE ?`;
+                params = [`%${identifier}%`];
             } else {
-                query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device FROM players WHERE ${dbField} = ?`;
-                params = [value];
+                query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen FROM players WHERE ${dbField} = ?`;
+                params = [identifier];
             }
 
             const [rows] = await pool.query(query, params);
 
             if (rows.length === 0) {
-                await interaction.editReply(`No information can be found for ${identifier}: ${value}`);
+                await interaction.editReply(`No information can be found for ${dbField}: ${identifier}`);
                 return;
             }
 
             if (dbField === 'playerName' && rows.length > 1) {
                 const displayCount = Math.min(rows.length, 10);
-                let responseMessage = `Found ${rows.length} players matching "${value}". `;
+                let responseMessage = `Found ${rows.length} players matching "${identifier}". `;
                 
                 if (rows.length > 10) {
                     responseMessage += `Showing first 10 results. Please refine your search for more specific results.\n\n`;
@@ -81,14 +71,16 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 for (let i = 0; i < displayCount; i++) {
                     const player = rows[i];
                     let playerDetails = `${i+1}. ${player.playerName || 'Unknown'}\n` +
-                                       `   UUID: ${player.playerUID || 'Missing'}\n` +
-                                       `   IP: ${player.playerIP || 'Missing'}\n` +
-                                       `   beGUID: ${player.beGUID || 'Missing'}\n` +
-                                       `   Device: ${player.device || 'Not Found'}\n`;
+                                        `   UUID: ${player.playerUID || 'Missing'}\n` +
+                                        `   IP: ${player.playerIP || 'Missing'}\n` +
+                                        `   beGUID: ${player.beGUID || 'Missing'}\n` +
+                                        `   Device: ${player.device || 'Not Found'}\n`;
                     
                     if (player.device === 'PC') {
                         playerDetails += `   SteamID: ${player.steamID || 'Not Found'}\n`;
                     }
+                    
+                    playerDetails +=    `   Last connected: ${player.lastSeen || 'Not Found'}\n`;
                     
                     responseMessage += playerDetails + '\n';
                 }
@@ -100,7 +92,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             const embeds = [];
             let currentEmbed = {
                 title: 'Reforger Lookup Directory',
-                description: `🔍 Whois: ${value}\n\n`,
+                description: `🔍 Whois: ${identifier}\n\n`,
                 color: 0xFFA500,
                 fields: [],
                 footer: {
@@ -118,6 +110,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 if (player.device === 'PC') {
                     playerInfo += `\nSteamID: ${player.steamID || 'Not Found'}`;
                 }
+                playerInfo += `\nLast connected: ${player.lastSeen || 'Not Found'}`;
                 
                 // Check if they are playing on this server
                 const playerList = serverInstance.players || [];

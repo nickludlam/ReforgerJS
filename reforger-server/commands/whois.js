@@ -7,19 +7,7 @@ module.exports = {
         .addStringOption(option =>
             option
                 .setName('identifier')
-                .setDescription('The type of identifier (beGUID, UUID, Name, or IP)')
-                .setRequired(true)
-                .addChoices(
-                    { name: 'beGUID', value: 'beguid' },
-                    { name: 'UUID', value: 'uuid' },
-                    { name: 'Name', value: 'name' },
-                    { name: 'IP', value: 'ip' }
-                )
-        )
-        .addStringOption(option =>
-            option
-                .setName('value')
-                .setDescription('The value of the chosen identifier')
+                .setDescription('The player identifier. Player name, BE GUID, Reforger ID, IP address, or Steam ID.')
                 .setRequired(true)
         )
 };

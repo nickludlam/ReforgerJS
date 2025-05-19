@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const mysql = require('mysql2/promise');
+const { escapeMarkdown } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
     const identifier = extraData.identifier;
@@ -217,7 +218,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
         const embed = new EmbedBuilder()
             .setTitle("📊 Player Stats" + titleSuffix)
-            .setDescription(`**User:** ${playerName}\n**UUID:** ${playerUID}\n---------------\n`)
+            .setDescription(`**User:** ${escapeMarkdown(playerName)}\n**UUID:** ${playerUID}\n---------------\n`)
             .setColor("#FFA500")
             .setFooter({ text: "Stats collected by ReforgerJS" })
             .addFields(fields);

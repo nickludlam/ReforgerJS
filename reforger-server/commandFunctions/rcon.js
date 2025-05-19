@@ -1,6 +1,7 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
 const e = require("express");
 const logger = require("../logger/logger");
+const { escapeMarkdown } = require('../../helpers');
 
 module.exports = async (
   interaction,
@@ -288,7 +289,7 @@ module.exports = async (
         if (displayKeys[key]) {
           return {
             name: displayKeys[key],
-            value: value !== undefined && value !== null ? String(value) : "Not Found",
+            value: value !== undefined && value !== null ? escapeMarkdown(String(value)) : "Not Found",
             inline: false,
           };
         }
