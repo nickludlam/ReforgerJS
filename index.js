@@ -113,6 +113,13 @@ async function main() {
             if (discordClient) await discordClient.destroy();
             process.exit(0);
         });
+
+        // 9) Instantiate the BattleMetrics class, and assign to process.battleMetrics
+        const BattleMetrics = require('./reforger-server/battlemetrics');
+        const battleMetricsInstance = new BattleMetrics(config);
+        await battleMetricsInstance.prepareToMount(serverInstance);
+        process.battleMetrics = battleMetricsInstance;
+
     } catch (error) {
         logger.error(`An error occurred: ${error.message}`);
         process.exit(1);

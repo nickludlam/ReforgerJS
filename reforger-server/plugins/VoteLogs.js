@@ -34,7 +34,8 @@ class VoteLogs {
       }
 
       await this.setupSchema();
-      
+      await this.migrateSchema();
+
       this.serverInstance.on("voteKickStart", this.handleVoteKickStart.bind(this));
       this.serverInstance.on("voteKickVictim", this.handleVoteKickVictim.bind(this));
       
@@ -55,7 +56,7 @@ class VoteLogs {
         victimUID VARCHAR(255) NULL,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_offender_victim (offenderUID, victimUID)
-      );
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `;
 
     const createVoteVictimsTable = `
@@ -65,7 +66,7 @@ class VoteLogs {
         victimUID VARCHAR(255) NULL,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_victim (victimUID)
-      );
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `;
 
     try {
@@ -79,6 +80,57 @@ class VoteLogs {
       throw error;
     }
   }
+
+  async migrateSchema() {
+    try {
+      logger.verbose(
+        `[${this.name}] Checking if schema migration is needed...`
+      );
+      const connection = await process.mysqlPool.getConnection();
+
+      const [offendersResult] = await connection.query(`
+      SELECT TABLE_COLLATION 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'VoteOffenders'
+    `);
+
+      const [victimsResult] = await connection.query(`
+      SELECT TABLE_COLLATION 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'VoteVictims'
+    `);
+
+      if (
+        offendersResult.length > 0 &&
+        !offendersResult[0].TABLE_COLLATION.startsWith("utf8mb4")
+      ) {
+        logger.info(
+          `[${this.name}] Migrating VoteOffenders table to utf8mb4...`
+        );
+        await connection.query(`
+        ALTER TABLE VoteOffenders CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+      }
+
+      if (
+        victimsResult.length > 0 &&
+        !victimsResult[0].TABLE_COLLATION.startsWith("utf8mb4")
+      ) {
+        logger.info(`[${this.name}] Migrating VoteVictims table to utf8mb4...`);
+        await connection.query(`
+        ALTER TABLE VoteVictims CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      `);
+      }
+
+      connection.release();
+      logger.verbose(`[${this.name}] Schema migration check completed.`);
+    } catch (error) {
+      logger.error(
+        `[${this.name}] Error during schema migration: ${error.message}`
+      );
+    }
+  }
+
 
   findPlayerUID(playerName, playerId) {
     if (!this.serverInstance || !this.serverInstance.players || !Array.isArray(this.serverInstance.players)) {

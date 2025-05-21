@@ -89,6 +89,13 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 return;
             }
 
+
+            // If it's a single result, we can fetch the BattleMetrics player URL
+            let bmPlayerURL = null;
+            if (rows.length == 1) {
+              bmPlayerURL = await process.battleMetrics.fetchBMPlayerURL(rows[0].playerUID);
+            }
+
             const embeds = [];
             let currentEmbed = {
                 title: 'Reforger Lookup Directory',
@@ -101,11 +108,14 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             };
 
             rows.forEach((player, index) => {
-                let playerInfo = `Name: ${escapeMarkdown(player.playerName) || 'Missing Player Name'}\n` +
-                               `IP Address: ${player.playerIP || 'Missing IP Address'}\n` +
-                               `Reforger UUID: ${player.playerUID || 'Missing UUID'}\n` +
-                               `be GUID: ${player.beGUID || 'Missing beGUID'}\n` +
-                               `Device: ${player.device || 'Not Found'}`;
+                let playerInfo = `Name: ${escapeMarkdown(player.playerName) || 'Missing Player Name'}` +
+                                 `\nReforger UUID: ${player.playerUID || 'Missing UUID'}`;
+                if (bmPlayerURL) {
+                    playerInfo += `\nBM URL: ${bmPlayerURL}`;
+                }
+                playerInfo +=  `\nbe GUID: ${player.beGUID || 'Missing beGUID'}` +
+                               `\nIP Address: ${player.playerIP || 'Missing IP Address'}` +
+                               `\nDevice: ${player.device || 'Not Found'}`;
                 
                 if (player.device === 'PC') {
                     playerInfo += `\nSteamID: ${player.steamID || 'Not Found'}`;
@@ -117,7 +127,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 const isOnline = playerList.some((p) => p.beGUID?.trim().toLowerCase() === player.beGUID?.trim().toLowerCase());
                 const playerIsOnlineLine = isOnline ? 'Currently Online' : 'Currently Offline';
                 playerInfo += `\nStatus: ${playerIsOnlineLine}`;
-                
+
                 const playerData = {
                     name: rows.length === 0 ? 'Player details' : `Player ${index + 1} details`,
                     value: playerInfo

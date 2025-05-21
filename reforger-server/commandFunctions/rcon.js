@@ -227,7 +227,7 @@ module.exports = async (
     }
 
     if (subcommand === "whois") {
-      const playerInfo = interaction.options.getString("playerinfo");
+      const playerInfo = interaction.options.getString("identifier");
 
       if (!hasPermissionForSubcommand("whois")) {
         return interaction.editReply({

@@ -45,6 +45,7 @@ class DBLog {
 
       await this.setupSchema();
       await this.migrateSchema();
+      await this.migrateToUTF8MB4();
       this.startLogging();
 
       // We also want to listen for playerJoined and playerLeft events
@@ -71,8 +72,8 @@ class DBLog {
         steamID VARCHAR(255) NULL,
         device VARCHAR(50) NULL,
         lastSeen TIMESTAMP NULL
-      );
-    `;
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+      `;
 
     try {
       const connection = await process.mysqlPool.getConnection();
@@ -136,6 +137,26 @@ class DBLog {
       }
       
       connection.release();
+    } catch (error) {
+      logger.error(`Error migrating schema: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async migrateToUTF8MB4() {
+    try {
+      // First query to check if the table is already utf8mb4
+      const [result] = await process.mysqlPool.query(`
+        SELECT TABLE_COLLATION 
+        FROM information_schema.TABLES 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'players'
+      `);
+      if (result.length > 0 && !result[0].TABLE_COLLATION.startsWith("utf8mb4")) {
+        await process.mysqlPool.query(`
+          ALTER TABLE players CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+        `);
+        logger.info(`DBLog: Converted players table to utf8mb4`);
+      }
     } catch (error) {
       logger.error(`Error migrating schema: ${error.message}`);
       throw error;

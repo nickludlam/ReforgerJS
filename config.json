@@ -41,6 +41,10 @@
       "password": "password",
       "database": "reforgerjs",
       "dialect": "mysql"
+    },
+    "battlemetrics": {
+      "enabled": true,
+      "token": "YOUR_BATTLEMETRICS_TOKEN"
     }
   },
   "roles": {
