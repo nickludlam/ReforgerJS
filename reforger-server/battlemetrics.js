@@ -13,27 +13,21 @@ class BattleMetrics {
 
     try {
       if (!this.config.connectors || !this.config.connectors.battlemetrics || !this.config.connectors.battlemetrics.enabled) {
+        logger.warn(`[${this.name}] BattleMetrics connector is not enabled in the configuration. Connector will be disabled.`);
         return;
       }
 
-      const pluginConfig = this.config.plugins.find(plugin => plugin.plugin === 'BattleMetrics');
-      if (!pluginConfig || !pluginConfig.enabled) {
-        logger.warn("BattleMetrics plugin is not enabled in the configuration.");
-        return;
-      }
-
-      // 
       if (!this.config.connectors.battlemetrics.token || this.config.connectors.battlemetrics.token === "") {
-        logger.error('BattleMetrics configuration is missing the token field.');
+        logger.error('BattleMetrics connector configuration is missing the token field.');
         return;
        }
 
       this.token = this.config.connectors.battlemetrics.token;
 
       this.isInitialized = true;
-      logger.info("BattleMetrics plugin initialized");
+      logger.info("BattleMetrics connector initialized");
     } catch (error) {
-      logger.error(`Error initializing BattleMetrics plugin: ${error}`);
+      logger.error(`Error initializing BattleMetrics connector: ${error}`);
     }
   }
 

@@ -197,7 +197,7 @@ class VoteLogs {
         eventTime
       ]);
       
-      logger.info(`Vote kick initiated by ${offenderName} against ${victimName} logged to database`);
+      logger.info(`Vote kick initiated by ${offenderName} against ${victimName} logged to database at event time ${eventTime}`);
     } catch (error) {
       logger.error(`Error logging vote kick start: ${error}`);
     }

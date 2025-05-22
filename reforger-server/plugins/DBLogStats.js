@@ -1,17 +1,22 @@
+const { EventEmitter } = require('events');
 const mysql = require("mysql2/promise");
 const fs = require("fs").promises;
 const pathModule = require("path");
+const logger = require("../logger/logger");
 
-class DBLogStats {
+class DBLogStats extends EventEmitter {
   constructor(config) {
+    super();
     this.config = config;
     this.name = "DBLogStats Plugin";
+    this.emittedEvents = ['playerStatsUpdated'];
     this.interval = null;
     this.logIntervalMinutes = 15; // default interval (minutes)
     this.serverInstance = null;
     this.folderPath = null;
     this.tableName = null;
     this.serverName = null;
+    this.statFileMTimes = new Map();
   }
 
   async prepareToMount(serverInstance) {
@@ -129,7 +134,7 @@ class DBLogStats {
         heavyban_kick_session_duration FLOAT DEFAULT 0,
         heavyban_streak FLOAT DEFAULT 0,
         created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `;
     try {
       const connection = await process.mysqlPool.getConnection();
@@ -319,6 +324,8 @@ class DBLogStats {
       const [result] = await connection.execute(query, values);
       await connection.release();
     }
+
+    this.emitEvent("playerStatsUpdated");
     return true;
   }
 
@@ -327,6 +334,7 @@ class DBLogStats {
 
     // accumulate player stats as a dict mapping playerUID to stats
     const playerStatData = {};
+    let skippedFileCount = 0;
 
     try {
       const files = await fs.readdir(this.folderPath);
@@ -340,8 +348,19 @@ class DBLogStats {
       for (const file of statFiles) {
         const match = /^PlayerData\.(.+)\.json$/.exec(file);
         if (!match) continue;
-        const playerUID = match[1];
+
+        // Get the file mtime and check if we already processed it
         const filePath = pathModule.join(this.folderPath, file);
+        const fileStat = await fs.stat(filePath);
+        const fileMTime = fileStat.mtimeMs;
+        if (this.statFileMTimes.has(file) && this.statFileMTimes.get(file) >= fileMTime) {
+          skippedFileCount++;
+          continue;
+        } else {
+          this.statFileMTimes.set(file, fileMTime);
+        }
+
+        const playerUID = match[1];
         let fileContent;
         try {
           fileContent = await fs.readFile(filePath, "utf8");
@@ -456,10 +475,23 @@ class DBLogStats {
       return;
     }
 
+    if (skippedFileCount > 0) {
+      logger.verbose(`[${this.name}] Skipped ${skippedFileCount} files that were not updated since last scan.`);
+    }
+
     logger.verbose(`[${this.name}] Collected stats for ${Object.keys(playerStatData).length} players.`);
     return playerStatData;
   }
 
+  emitEvent(eventName, data = null) {
+    logger.verbose(`[${this.name}] Emitting event: ${eventName}`);
+    // check if the event name is valid
+    if (!this.emittedEvents.includes(eventName)) {
+      logger.warn(`[${this.name}] Invalid event name: ${eventName}`);
+      return;
+    }
+    this.emit(eventName, data);
+  }
 
   async cleanup() {
     logger.verbose(`[${this.name}] Cleaning up...`);

@@ -6,7 +6,6 @@
     "queryPort": 1111,
     "rconPort": 1111,
     "rconPassword": "PASSWORD",
-    "reloadCommandsOnStartup": true,
     "logReaderMode": "tail",
     "filename": "console.log",
     "backfill": true,
@@ -22,7 +21,8 @@
       "port": 21,
       "user": "FTP Username",
       "password": "FTP Password"
-    }
+    },
+    "commandCachePath": "/path/to/commands-cache.json"
   },
   "consoleLogLevel": "info",
   "outputLogLevel": "info",
@@ -130,6 +130,10 @@
       "logAlts": true,
       "logOnlyOnline": false,
       "whitelistBEGUIDs": []
+    },
+    {
+      "plugin": "EXDLeague",
+      "enabled": true
     },
     {
       "plugin": "ServerStatus",

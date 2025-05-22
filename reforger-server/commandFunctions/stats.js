@@ -89,7 +89,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         // This requires the command choices to line up with the server names in the database, as configured by DBLogStats.serverName
         const filterServerName = requestedServer || 'all';
 
-        logger.verbose(`[Stats Command] Player: ${playerName} (${playerUID}) requested stats for server: ${filterServerName}`);
+        logger.verbose(`[Stats Command] Fetching ${playerName} (${playerUID}) stats on server: ${filterServerName}`);
 
         // Now perform a query, and either filter by playerUID AND serverName, or just playerUID if the serverName is 'all'
         const query = filterServerName === 'all'
@@ -208,6 +208,10 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             fields.push({
                 name: "**🌱 Seeder**",
                 value: `Minutes tracked as a seeder: ${stats.seedValue}`
+            });
+            fields.push({
+                name: "**🕒 Playtime**",
+                value: `Total Playtime: ${Math.floor(stats.session_duration)}`
             });
         }
 

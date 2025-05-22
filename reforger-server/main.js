@@ -22,6 +22,7 @@ class ReforgerServer extends EventEmitter {
     this.initialReconnectDelay = 5000;
     this.maxReconnectDelay = 60000;
     this.currentReconnectDelay = this.initialReconnectDelay;
+    this.pluginInstances = [];
   }
 
   setupRCON() {
@@ -258,6 +259,14 @@ class ReforgerServer extends EventEmitter {
     this.logParser.on("gameEnd", (data) => {
       logger.info(`Game ended at ${data.time}`);
       this.emit("gameEnd", data);
+    });
+  }
+
+  // Listen to the pluginInstance for an event and re-emit it
+  registerPluginEvent(event, pluginInstance) {
+    pluginInstance.on(event, (data) => {
+      logger.verbose(`Rebroadcasting event '${event}' from plugin '${pluginInstance.name || 'Unnamed Plugin'}'`);
+      this.emit(event, data);
     });
   }
 

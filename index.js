@@ -41,17 +41,13 @@ async function main() {
         // 3) Perform startup checks and get the Discord client
         const discordClient = await performStartupChecks(config);
 
-        // 3.5) Reload Discord commands if configured
-        if (config.server && config.server.reloadCommandsOnStartup === true) {
-            logger.info('Reloading Discord commands on startup (reloadCommandsOnStartup=true)...');
-            const success = await deployCommands(config, logger, discordClient);
-            if (success) {
-                logger.info('Discord commands successfully reloaded.');
-            } else {
-                logger.warn('Failed to reload Discord commands. Bot will continue with existing commands.');
-            }
+        // 3.5) Reload Discord commands if necessary
+        logger.info(`Checking for Discord command changes...`);
+        const success = await deployCommands(config, logger, discordClient);
+        if (success) {
+            logger.info('Discord commands successfully reloaded.');
         } else {
-            logger.verbose('Skipping command reload on startup (reloadCommandsOnStartup is disabled).');
+            logger.info('Discord commands were not reloaded.');
         }
 
         // 4) Create and initialize ReforgerServer
@@ -62,6 +58,7 @@ async function main() {
 
         // 5) Load plugins
         const loadedPlugins = await loadPlugins(config);
+        serverInstance.pluginInstances = loadedPlugins;
 
         // 6) Mount plugins with the server instance and Discord client
         await mountPlugins(loadedPlugins, serverInstance, discordClient);

@@ -15,6 +15,8 @@ class AltChecker {
     this.logOnlyOnline = false;
     this.whitelistBEGUIDs = new Set();
     this.playerIPCache = new Map();
+    this.lastBroadcastTime = new Map(); // Store the last broadcast time for each player
+    this.broadcastSuppressionInterval = 10 * 60 * 1000; // rate limit broadcasts to every 10 minutes
     this.cacheTTL = 5 * 60 * 1000;
   }
 
@@ -144,6 +146,20 @@ class AltChecker {
       if (this.logOnlyOnline && !atLeastOneOnline) {
         return;
       }
+
+      // Now populate the lastBroadcastTime for the player and the alts
+      const playerBEGUIDs = [beGUID, ...altAccounts.map((alt) => alt.beGUID)];
+      const currentTime = Date.now();
+      playerBEGUIDs.forEach((guid) => {
+        if (this.lastBroadcastTime.has(guid)) {
+          const lastTime = this.lastBroadcastTime.get(guid);
+          if (currentTime - lastTime < this.broadcastSuppressionInterval) {
+            logger.verbose(`[${this.name}] Suppressing broadcast for ${guid} due to interval.`);
+            return;
+          }
+        }
+        this.lastBroadcastTime.set(guid, currentTime);
+      });
 
       if (this.logAlts) {
         const embed = new EmbedBuilder()
