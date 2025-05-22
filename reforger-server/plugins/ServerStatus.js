@@ -123,22 +123,34 @@ class ServerStatus {
       const fps = global.serverFPS || 0;
       const memoryUsageMB = ((global.serverMemoryUsage || 0) / 1024).toFixed(2);
 
+      const haveServerDataUpdateTime = global.serverDataLastUpdatedAt && !isNaN(global.serverDataLastUpdatedAt);
+      const lastUpdatedAt = global.serverDataLastUpdatedAt || new Date();
+      const secondsSinceLastUpdate = Math.floor((Date.now() - lastUpdatedAt) / 1000);
+      const dynamicEmbedColor = secondsSinceLastUpdate < 60 ? "#00FF00" : "#FF0000";
+
+      const fields = [
+        { name: "Player Count", value: `${playerCount}`, inline: true },
+        { name: "FPS", value: `${fps}`, inline: true },
+        { name: "Memory Usage", value: `${memoryUsageMB} MB`, inline: true },
+      ]
+      if (haveServerDataUpdateTime) {
+        fields.push({ name: "Stats last updated", value: `${secondsSinceLastUpdate} seconds ago`, inline: true });
+      } else {
+        fields.push({ name: "Stats last updated", value: `Loading...`, inline: true });
+      }
+
       const embed = new EmbedBuilder()
         .setTitle(embedConfig.title || "Server Status")
-        .setColor(embedConfig.color || "#00FF00")
+        .setColor(dynamicEmbedColor)
         .setDescription(serverName)
         .setTimestamp()
-        .addFields(
-          { name: "Player Count", value: `${playerCount}`, inline: true },
-          { name: "FPS", value: `${fps}`, inline: true },
-          { name: "Memory Usage", value: `${memoryUsageMB} MB`, inline: true }
-        );
+        .addFields(fields);
 
       if (embedConfig.footer) embed.setFooter({ text: embedConfig.footer });
       
       // Only set thumbnail if thumbnail is not explicitly set to false and a URL is provided
       if (embedConfig.thumbnail !== false && embedConfig.thumbnailURL?.trim()) {
-        logger.verbose(`ServerStatus plugin: Setting thumbnail to ${embedConfig.thumbnailURL}`);
+        // logger.verbose(`ServerStatus plugin: Setting thumbnail to ${embedConfig.thumbnailURL}`);
         embed.setThumbnail(embedConfig.thumbnailURL);
       }
 

@@ -16,6 +16,7 @@ class AltChecker {
     this.whitelistBEGUIDs = new Set();
     this.playerIPCache = new Map();
     this.lastBroadcastTime = new Map(); // Store the last broadcast time for each player
+    this.mostRecentBEGUIDsAnnounced = new Set();
     this.broadcastSuppressionInterval = 10 * 60 * 1000; // rate limit broadcasts to every 10 minutes
     this.cacheTTL = 5 * 60 * 1000;
   }
@@ -148,9 +149,20 @@ class AltChecker {
       }
 
       // Now populate the lastBroadcastTime for the player and the alts
-      const playerBEGUIDs = [beGUID, ...altAccounts.map((alt) => alt.beGUID)];
+      const allPlayerBEGUIDs = [beGUID, ...altAccounts.map((alt) => alt.beGUID)];
+
+      // Check this.mostRecentBEGUIDsAnnounced to see if ALL of the BE GUIDs have been announced in the most recent broadcast
+      const allBEGUIDsAnnounced = allPlayerBEGUIDs.every((guid) => this.mostRecentBEGUIDsAnnounced.has(guid));
+      if (allBEGUIDsAnnounced) {
+        logger.verbose(`[${this.name}] All BE GUIDs have been announced recently. Suppressing broadcast.`);
+        return;
+      }
+      // Update this.mostRecentBEGUIDsAnnounced with the current BE GUIDs
+      this.mostRecentBEGUIDsAnnounced = new Set(allPlayerBEGUIDs);
+
+      // Now check the lastBroadcastTime for each BE GUID
       const currentTime = Date.now();
-      playerBEGUIDs.forEach((guid) => {
+      allPlayerBEGUIDs.forEach((guid) => {
         if (this.lastBroadcastTime.has(guid)) {
           const lastTime = this.lastBroadcastTime.get(guid);
           if (currentTime - lastTime < this.broadcastSuppressionInterval) {

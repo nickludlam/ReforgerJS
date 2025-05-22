@@ -9,7 +9,7 @@ async function cacheCurrentCommands(cacheFilePath, commands) {
   try {
     // Create the directory if it doesn't exist
     const dir = path.dirname(cacheFilePath);
-    if (!fs.promises.existsSync(dir)) {
+    if (!fs.existsSync(dir)) {
       await fs.promises.mkdir(dir, { recursive: true });
     }
     await fs.promises.writeFile(cacheFilePath, JSON.stringify(commands, null, 2));

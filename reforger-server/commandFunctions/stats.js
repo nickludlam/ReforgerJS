@@ -209,11 +209,12 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 name: "**🌱 Seeder**",
                 value: `Minutes tracked as a seeder: ${stats.seedValue}`
             });
-            fields.push({
-                name: "**🕒 Playtime**",
-                value: `Total Playtime: ${Math.floor(stats.session_duration)}`
-            });
         }
+        
+        fields.push({
+            name: "**🕒 Playtime**",
+            value: `Total Playtime: ${Math.floor(stats.session_duration / (60 * 60))} hours`
+        });
 
         // TODO: Improve this to work with the command configuration in commands/stats.js
         const serverDisplayName = filterServerName.replace(/([a-z])([0-9])/g, '$1 $2');

@@ -6,6 +6,7 @@ const logger = require("./logger/logger");
 global.serverPlayerCount = 0;
 global.serverFPS = 0;
 global.serverMemoryUsage = 0;
+global.serverDataLastUpdatedAt = null;
 
 class ReforgerServer extends EventEmitter {
   constructor(config) {
@@ -125,7 +126,8 @@ class ReforgerServer extends EventEmitter {
       global.serverFPS = data.fps;
       global.serverMemoryUsage = data.memory;
       global.serverPlayerCount = data.player;
-      const memoryMB = (global.serverMemoryUsage / 1024).toFixed(2);
+      global.serverDataLastUpdatedAt = Date.now();
+      // const memoryMB = (global.serverMemoryUsage / 1024).toFixed(2);
       //logger.verbose(`Server Health updated: FPS: ${global.serverFPS}, Memory: ${global.serverMemoryUsage} kB (${memoryMB} MB), Player Count: ${global.serverPlayerCount}`);
     });
 

@@ -65,6 +65,7 @@ class LogParser extends EventEmitter {
       const ServerHealthHandler = require('./regexHandlers/serverHealth');
       const GameStartHandler = require('./regexHandlers/gameStart');
       const GameEndHandler = require('./regexHandlers/gameEnd');
+      const GameCrashedHandler = require('./regexHandlers/gameCrashed');
 
       this.voteKickStartHandler = new VoteKickStartHandler();
       this.voteKickVictimHandler = new VoteKickVictimHandler();
@@ -73,6 +74,7 @@ class LogParser extends EventEmitter {
       this.serverHealthHandler = new ServerHealthHandler();
       this.gameStartHandler = new GameStartHandler();
       this.gameEndHandler = new GameEndHandler();
+      this.gameCrashedHandler = new GameCrashedHandler();
 
 
       this.removeAllListeners();
@@ -85,6 +87,7 @@ class LogParser extends EventEmitter {
       this.serverHealthHandler.on('serverHealth', data => this.emit('serverHealth', data));
       this.gameStartHandler.on('gameStart', data => this.emit('gameStart', data));
       this.gameEndHandler.on('gameEnd', data => this.emit('gameEnd', data));
+      this.gameCrashedHandler.on('gameCrashed', data => this.emit('gameCrashed', data));
     } catch (error) {
       logger.error(`Error setting up regex handlers: ${error.message}`);
     }
@@ -92,7 +95,11 @@ class LogParser extends EventEmitter {
 
   processLine(line) {
    // logger.verbose('LogParser', `Processing line: ${line}`);
-
+    if (this.serverHealthHandler && this.serverHealthHandler.test(line)) {
+      this.serverHealthHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
     if (this.voteKickStartHandler && this.voteKickStartHandler.test(line)) {
       this.voteKickStartHandler.processLine(line);
       this.matchingLinesPerMinute++;
@@ -113,11 +120,6 @@ class LogParser extends EventEmitter {
       this.matchingLinesPerMinute++;
       return;
     }
-    if (this.serverHealthHandler && this.serverHealthHandler.test(line)) {
-      this.serverHealthHandler.processLine(line);
-      this.matchingLinesPerMinute++;
-      return;
-    }
     if (this.gameStartHandler && this.gameStartHandler.test(line)) {
       this.gameStartHandler.processLine(line);
       this.matchingLinesPerMinute++;
@@ -125,6 +127,12 @@ class LogParser extends EventEmitter {
     }
     if (this.gameEndHandler && this.gameEndHandler.test(line)) {
       this.gameEndHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+
+    if (this.gameCrashedHandler && this.gameCrashedHandler.test(line)) {
+      this.gameCrashedHandler.processLine(line);
       this.matchingLinesPerMinute++;
       return;
     }
