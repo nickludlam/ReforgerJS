@@ -86,6 +86,11 @@
       "restart": 3,
       "kick": 3,
       "whois": 3
+    },
+    {
+      "command": "evidence",
+      "enabled": false,
+      "commandLevel": 2
     }
   ],
   "plugins": [
