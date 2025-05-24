@@ -29,5 +29,10 @@
     "ssh2-sftp-client": "^11.0.0",
     "winston": "^3.13.1",
     "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "eslint": "^9.27.0",
+    "globals": "^16.1.0"
   }
 }

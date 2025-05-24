@@ -1,4 +1,3 @@
-const mysql = require("mysql2/promise");
 const logger = require("../logger/logger");
 
 class EXDLeague {
@@ -108,17 +107,18 @@ class EXDLeague {
             saline_friendlies FLOAT DEFAULT 0,
             morphine_friendlies FLOAT DEFAULT 0,
             UNIQUE INDEX idx_player_server_league_snap (playerUID, server_name, league_number, is_initial_snapshot)
-        );
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `;
 
     const createLeagueSettingsTableQuery = `
         CREATE TABLE IF NOT EXISTS ${this.leagueSettingsTableName} (
-            league_number INT NOT NULL PRIMARY KEY,
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            league_number INT NOT NULL,
             server_name VARCHAR(255) NOT NULL,
             league_start DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE INDEX idx_league_number_server_name (league_number, server_name),
             INDEX idx_league_start (league_start)
-        );
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `;
 
     try {
@@ -151,21 +151,6 @@ class EXDLeague {
       // For multi-server support, we need to add server_name column
       if (!columnNames.includes('server_name')) {
         alterQueries.push('ADD COLUMN server_name VARCHAR(255) NULL');
-      }
-
-      // Now check if we still have a unique constraint on playerUID, and if we do, remove it
-      const [indexes] = await connection.query(`
-        SELECT INDEX_NAME
-        FROM INFORMATION_SCHEMA.STATISTICS
-        WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = '${this.leagueSettingsTableName}'
-        AND COLUMN_NAME = 'idx_league_number'
-        AND NON_UNIQUE = 0
-      `);
-
-      if (indexes.length > 0 && indexes[0].INDEX_NAME === 'idx_league_number') {
-        alterQueries.push('DROP INDEX idx_league_number');
-        alterQueries.push('ADD UNIQUE INDEX idx_league_number_server_name (league_number, server_name)');
       }
       
       if (alterQueries.length > 0) {
@@ -222,8 +207,45 @@ class EXDLeague {
     }
 
     const currentLeagueNumber = rows[0].maxLeagueNumber;
-    logger.verbose(`[${this.name}] Current league number: ${currentLeagueNumber}`);
+    // logger.verbose(`[${this.name}] Current league number: ${currentLeagueNumber}`);
     return currentLeagueNumber;
+  }
+
+  async getPlayerUIDByName(playerName) {
+    const connection = await process.mysqlPool.getConnection();
+
+    const searchName = '%' + playerName + '%';
+    logger.verbose(`[${this.name}] Getting playerUID for name: ${playerName}`);
+
+
+    const [rows] = await connection.query(
+      `SELECT playerUID FROM players WHERE playerName LIKE ?`,
+      [searchName]
+    );
+    connection.release();
+    if (rows.length === 0) {
+      logger.warn(`[${this.name}] No player found with name: ${playerName}`);
+      return null;
+    }
+    if (rows.length > 1) {
+      // Try an exact match just in case it's a name which happens to be a substring of many players
+      const [exactMatchRows] = await connection.query(
+        `SELECT playerUID FROM players WHERE playerName = ?`,
+        [playerName]
+      );
+      if (exactMatchRows.length > 0) {
+        const playerUID = exactMatchRows[0].playerUID;
+        logger.verbose(`[${this.name}] Found playerUID: ${playerUID} for exact name: ${playerName}`);
+        connection.release();
+        return playerUID;
+      }
+
+      logger.warn(`[${this.name}] Multiple players found with name: ${playerName}`);
+      return null;
+    }
+    const playerUID = rows[0].playerUID;
+    logger.verbose(`[${this.name}] Found playerUID: ${playerUID}`);
+    return playerUID;
   }
 
 
@@ -376,16 +398,19 @@ class EXDLeague {
 
   async wipeAllLeagueStats() {
     logger.verbose(`[${this.name}] Wiping all league stats...`);
+    let connection = null;
+
     try {
-      const connection = await process.mysqlPool.getConnection();
+      connection = await process.mysqlPool.getConnection();
       const deleteLeagueStatsQuery = `DELETE FROM ${this.leagueStatsTableName}`;
       const deleteLeagueSettingsQuery = `DELETE FROM ${this.leagueSettingsTableName}`;
       await connection.query(deleteLeagueStatsQuery);
       await connection.query(deleteLeagueSettingsQuery);
-      connection.release();
       logger.info(`[${this.name}] All league stats wiped.`);
     } catch (error) {
       logger.error(`[${this.name}] Error wiping league stats: ${error.message}`);
+    } finally {
+      // Always release the connection in a finally block
       if (connection) {
         connection.release();
       }
@@ -420,7 +445,7 @@ class EXDLeague {
         return;
       }
       
-      logger.verbose(`[${this.name}] Current league number: ${currentLeagueNumber}`);
+      // logger.verbose(`[${this.name}] Current league number: ${currentLeagueNumber}`);
 
       // Define columns we want to track for league stats - must match the schema
       const playerStatColumns = [
@@ -491,10 +516,12 @@ class EXDLeague {
       return;
     }
 
+    let connection = null;
+
     try {
       const start = Date.now();
 
-      const connection = await process.mysqlPool.getConnection();
+      connection = await process.mysqlPool.getConnection();
       // start a transaction
       await connection.beginTransaction();
 
@@ -529,8 +556,9 @@ class EXDLeague {
     } catch (error) {
       logger.error(`[${this.name}] Error updating current league minutes played: ${error.message}`);
       // rollback the transaction
-      await connection.rollback();
-      connection.release();
+      if (connection) await connection.rollback();
+    } finally {
+      if (connection) connection.release();
     }
   }
 
@@ -542,9 +570,10 @@ class EXDLeague {
    * @param {number} limit - Maximum number of results to return
    * @param {string} sortBy - Column to sort by
    * @param {string} order - Sort direction (ASC or DESC)
+   * @param {string|null} playerUID - Optional playerUID to center results around
    * @returns {Object} League stats diff
    */
-  async getLeagueStatsDiff(limit = 100, sortBy = 'minutes_played_in_league', order = 'DESC') {
+  async getLeagueStatsDiff(playerUID = null, limit = 100, sortBy = 'minutes_played_in_league', order = 'DESC') {
     logger.verbose(`[${this.name}] Getting league stats diff...`);
     let connection;
     
@@ -558,6 +587,7 @@ class EXDLeague {
       
       // Sanitize input
       if (!validSortColumns.includes(sortBy)) {
+        logger.warn(`[${this.name}] Invalid sort column: ${sortBy}. Defaulting to 'minutes_played_in_league'.`);
         sortBy = 'minutes_played_in_league';
       }
       
@@ -592,113 +622,169 @@ class EXDLeague {
         'minutes_played'
       ];
 
-      // Query to calculate diff between current league stats and baseline (using is_initial_snapshot)
-      let diffQuery = `
-        SELECT 
-          curr.playerUID,
-          p.playerName,
-          curr.league_number,
-          p.device,
-          base.minutes_played AS baseline_minutes_played,
-          curr.minutes_played,
-          (curr.minutes_played - IFNULL(base.minutes_played, 0)) AS minutes_played_in_league,
-          ${playerStatColumns
-            .filter(col => col !== 'minutes_played')
-            .map(col => 
-              `IFNULL(curr.${col}, 0) AS ${col}, 
-               IFNULL(base.${col}, 0) AS baseline_${col}, 
-               (IFNULL(curr.${col}, 0) - IFNULL(base.${col}, 0)) AS diff_${col}`
-            ).join(', ')},
-          IF(
-            (IFNULL(curr.kills, 0) - IFNULL(base.kills, 0)) > 0,
-            (IFNULL(curr.kills, 0) - IFNULL(base.kills, 0)) / 
-            GREATEST(IFNULL(curr.deaths, 0) - IFNULL(base.deaths, 0), 1),
-            0
-          ) AS kd_ratio,
-          (
-            (IFNULL(curr.bandage_friendlies, 0) - IFNULL(base.bandage_friendlies, 0)) + 
-            (IFNULL(curr.tourniquet_friendlies, 0) - IFNULL(base.tourniquet_friendlies, 0)) + 
-            (IFNULL(curr.saline_friendlies, 0) - IFNULL(base.saline_friendlies, 0)) + 
-            (IFNULL(curr.morphine_friendlies, 0) - IFNULL(base.morphine_friendlies, 0))
-          ) AS total_medical
-        FROM ${this.leagueStatsTableName} curr
-        LEFT JOIN ${this.leagueStatsTableName} base 
-          ON curr.playerUID = base.playerUID 
-          AND base.league_number = curr.league_number
-          AND base.server_name = curr.server_name
-          AND base.is_initial_snapshot = 1
-        JOIN players p ON curr.playerUID = p.playerUID
-        WHERE curr.league_number = ?
-        AND curr.server_name = ?
-        AND curr.is_initial_snapshot = 0`;
+      // If playerUID is provided, we need to find its position in the sorted results
+      let playerPosition = -1;
+      let totalPlayersCount = 0;
+      let diffResults = [];
       
-      // Only add the blacklist filter if we have entries
-      if (this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0) {
-        diffQuery += ` AND p.beGUID NOT IN (?)`;
+      if (playerUID) {
+        // First, get the row number for the specified playerUID
+        const rankQuery = `
+          SELECT position, total_count FROM (
+            SELECT 
+              playerUID,
+              ROW_NUMBER() OVER (ORDER BY ${sortBy} ${order}) AS position,
+              COUNT(*) OVER () AS total_count
+            FROM (
+              SELECT 
+                curr.playerUID,
+                (curr.minutes_played - IFNULL(base.minutes_played, 0)) AS minutes_played_in_league,
+                ${playerStatColumns
+                  .filter(col => col !== 'minutes_played')
+                  .map(col => `(IFNULL(curr.${col}, 0) - IFNULL(base.${col}, 0)) AS diff_${col}`)
+                  .join(', ')},
+                IF(
+                  (IFNULL(curr.kills, 0) - IFNULL(base.kills, 0)) > 0,
+                  (IFNULL(curr.kills, 0) - IFNULL(base.kills, 0)) / 
+                  GREATEST(IFNULL(curr.deaths, 0) - IFNULL(base.deaths, 0), 1),
+                  0
+                ) AS kd_ratio,
+                (
+                  (IFNULL(curr.bandage_friendlies, 0) - IFNULL(base.bandage_friendlies, 0)) + 
+                  (IFNULL(curr.tourniquet_friendlies, 0) - IFNULL(base.tourniquet_friendlies, 0)) + 
+                  (IFNULL(curr.saline_friendlies, 0) - IFNULL(base.saline_friendlies, 0)) + 
+                  (IFNULL(curr.morphine_friendlies, 0) - IFNULL(base.morphine_friendlies, 0))
+                ) AS total_medical
+              FROM ${this.leagueStatsTableName} curr
+              LEFT JOIN ${this.leagueStatsTableName} base 
+                ON curr.playerUID = base.playerUID 
+                AND base.league_number = curr.league_number
+                AND base.server_name = curr.server_name
+                AND base.is_initial_snapshot = 1
+              JOIN players p ON curr.playerUID = p.playerUID
+              WHERE curr.league_number = ?
+              AND curr.server_name = ?
+              AND curr.is_initial_snapshot = 0
+              ${this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0 ? 'AND p.beGUID NOT IN (?)' : ''}
+              AND curr.minutes_played > 0
+            ) AS filtered_stats
+          ) AS ranked
+          WHERE playerUID = ?
+        `;
+
+        // Prepare parameters for the rank query
+        let rankParams = [currentLeagueNumber, this.serverName];
+        
+        if (this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0) {
+          rankParams.push(this.blacklistBEGUIDs);
+        }
+        
+        rankParams.push(playerUID);
+        
+        const [rankResult] = await connection.query(rankQuery, rankParams);
+        
+        if (rankResult && rankResult.length > 0) {
+          playerPosition = rankResult[0].position;
+          totalPlayersCount = rankResult[0].total_count;
+          
+          // Calculate the offset to center the player in the results
+          // We want the player to be in the middle of the results if possible
+          const halfLimit = Math.floor(limit / 2);
+          let offset = Math.max(0, playerPosition - halfLimit - 1); // -1 because ROW_NUMBER() starts at 1
+          
+          // Adjust offset if we're near the end of the result set
+          if (offset + limit > totalPlayersCount) {
+            offset = Math.max(0, totalPlayersCount - limit);
+          }
+          
+          logger.verbose(`[${this.name}] Player ${playerUID} is at position ${playerPosition} of ${totalPlayersCount}. Using offset ${offset}`);
+          
+          // Now get the actual stats with LIMIT and OFFSET
+          let mainQuery = this.buildLeagueStatsDiffQuery(playerStatColumns);
+          mainQuery += `
+            AND curr.minutes_played > 0
+            ORDER BY ${sortBy} ${order}
+            LIMIT ? OFFSET ?
+          `;
+          
+          // Prepare parameters
+          let params = [currentLeagueNumber, this.serverName];
+          
+          if (this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0) {
+            params.push(this.blacklistBEGUIDs);
+          }
+          
+          params.push(limit, offset);
+          
+          [diffResults] = await connection.query(mainQuery, params);
+        } else {
+          logger.warn(`[${this.name}] Player ${playerUID} not found in league stats.`);
+          // Fall back to standard query without centering
+          playerUID = null;
+        }
       }
       
-      diffQuery += `
-        AND curr.minutes_played > 0
-        ORDER BY ${sortBy} ${order}
-        LIMIT ?
-      `;
-      
-      // Prepare parameters - only include blacklist if it's not empty
-      let params = [
-        currentLeagueNumber,
-        this.serverName
-      ];
-      
-      // Only add the blacklist parameter if we have entries
-      if (this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0) {
-        params.push(this.blacklistBEGUIDs);
+      // If playerUID wasn't provided or the player wasn't found, run the standard query
+      if (!playerUID) {
+        // Query to calculate diff between current league stats and baseline (using is_initial_snapshot)
+        let diffQuery = this.buildLeagueStatsDiffQuery(playerStatColumns);
+        
+        diffQuery += `
+          AND curr.minutes_played > 10
+          ORDER BY ${sortBy} ${order}
+          LIMIT ?
+        `;
+        
+        // Prepare parameters - only include blacklist if it's not empty
+        let params = [
+          currentLeagueNumber,
+          this.serverName
+        ];
+        
+        // Only add the blacklist parameter if we have entries
+        if (this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0) {
+          params.push(this.blacklistBEGUIDs);
+        }
+        
+        // Add the limit parameter
+        params.push(limit);
+        
+        // Enable query logging for debugging
+        logger.verbose(`[${this.name}] Diff query:\n${diffQuery}`);
+        
+        [diffResults] = await connection.query(diffQuery, params);
       }
-      
-      // Add the limit parameter
-      params.push(limit);
 
-      // Enable query logging for debugging
-      // logger.warn(`[${this.name}] Diff query: ${diffQuery}`);
-      // logger.verbose(`[${this.name}] Diff query params: ${JSON.stringify(params)}`);
-      
-      const [diffResults] = await connection.query(diffQuery, params);
-
-      // Get the time it took to run the query
-      const queryTime = connection.queryTime;
-
-      // Prune out any results where the diff_ value is < 0
-      const filteredResults = diffResults.filter(row => {
-        return playerStatColumns.some(col => {
-          return row[`diff_${col}`] >= 0;
-        }) || row.total_medical > 0;
-      });
-
-      // Warn if we filtered any results
-      if (filteredResults.length !== diffResults.length) {
-        logger.warn(`[${this.name}] Filtered out ${diffResults.length - filteredResults.length} players with negative diffs.`);
-      }
-      
       // Get the league settings to include start date
       const [leagueSettings] = await connection.query(
-        `SELECT league_start FROM ${this.leagueSettingsTableName} WHERE league_number = ?`,
-        [currentLeagueNumber]
+        `SELECT league_start FROM ${this.leagueSettingsTableName} WHERE league_number = ? AND server_name = ?`,
+        [currentLeagueNumber, this.serverName]
       );
 
       // Also get the total number of participants in the league
-      const [totalParticipants] = await connection.query(
-        `SELECT COUNT(*) AS total FROM ${this.leagueStatsTableName} WHERE league_number = ?`,
-        [currentLeagueNumber]
+      const [totalEntrants] = await connection.query(
+        `SELECT COUNT(*) AS total FROM ${this.leagueStatsTableName} WHERE league_number = ? AND server_name = ? AND is_initial_snapshot = 0`,
+        [currentLeagueNumber, this.serverName]
       );
 
       const result = {
         league: {
           number: currentLeagueNumber,
           startDate: leagueSettings.length > 0 ? leagueSettings[0].league_start : null,
-          totalParticipants: totalParticipants[0].total,
-          playerCount: diffResults.length,
+          totalEntrantCount: totalEntrants[0].total,
+          resultCount: diffResults.length,
         },
         players: diffResults
       };
+      
+      // If a specific player was requested and found, include their position in the response
+      if (playerPosition > 0) {
+        result.requestedPlayer = {
+          uid: playerUID,
+          position: playerPosition,
+          totalPlayerCount: totalPlayersCount
+        };
+      }
       
       connection.release();
       return result;
@@ -709,6 +795,48 @@ class EXDLeague {
       }
       return null;
     }
+  }
+
+  buildLeagueStatsDiffQuery(playerStatColumns) {
+    return `
+      SELECT 
+        curr.playerUID,
+        p.playerName,
+        curr.league_number,
+        p.device,
+        base.minutes_played AS baseline_minutes_played,
+        curr.minutes_played,
+        (curr.minutes_played - IFNULL(base.minutes_played, 0)) AS minutes_played_in_league,
+        ${playerStatColumns
+          .filter(col => col !== 'minutes_played')
+          .map(col => 
+            `IFNULL(curr.${col}, 0) AS ${col}, 
+             IFNULL(base.${col}, 0) AS baseline_${col}, 
+             (IFNULL(curr.${col}, 0) - IFNULL(base.${col}, 0)) AS diff_${col}`
+          ).join(', ')},
+        IF(
+          (IFNULL(curr.kills, 0) - IFNULL(base.kills, 0)) > 0,
+          (IFNULL(curr.kills, 0) - IFNULL(base.kills, 0)) / 
+          GREATEST(IFNULL(curr.deaths, 0) - IFNULL(base.deaths, 0), 1),
+          0
+        ) AS kd_ratio,
+        (
+          (IFNULL(curr.bandage_friendlies, 0) - IFNULL(base.bandage_friendlies, 0)) + 
+          (IFNULL(curr.tourniquet_friendlies, 0) - IFNULL(base.tourniquet_friendlies, 0)) + 
+          (IFNULL(curr.saline_friendlies, 0) - IFNULL(base.saline_friendlies, 0)) + 
+          (IFNULL(curr.morphine_friendlies, 0) - IFNULL(base.morphine_friendlies, 0))
+        ) AS total_medical
+      FROM ${this.leagueStatsTableName} curr
+      LEFT JOIN ${this.leagueStatsTableName} base 
+        ON curr.playerUID = base.playerUID 
+        AND base.league_number = curr.league_number
+        AND base.server_name = curr.server_name
+        AND base.is_initial_snapshot = 1
+      JOIN players p ON curr.playerUID = p.playerUID
+      WHERE curr.league_number = ?
+      AND curr.server_name = ?
+      AND curr.is_initial_snapshot = 0
+      ${this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0 ? 'AND p.beGUID NOT IN (?)' : ''}`;
   }
 
   async cleanup() {

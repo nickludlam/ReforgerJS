@@ -68,6 +68,25 @@ function parseLogDate(dateString) {
   return new Date(year, month - 1, day, hour, min, sec, ms);
 }
 
+// Function to get the user's maximum role level
+function getUserMaxRoleLevel(discordUserRoles, config) {
+  let maxLevel = 0;
+  for (const [levelKey, roleNameArray] of Object.entries(config.roleLevels)) {
+    const numericLevel = parseInt(levelKey, 10);
+    if (isNaN(numericLevel)) continue;
+
+    for (const roleName of roleNameArray) {
+      const discordRoleID = config.roles[roleName];
+      if (discordRoleID && discordUserRoles.includes(discordRoleID)) {
+        if (numericLevel > maxLevel) {
+          maxLevel = numericLevel;
+        }
+      }
+    }
+  }
+  return maxLevel;
+}
+
 module.exports = {
   escapeMarkdown,
   classifyUserQueryInfo,

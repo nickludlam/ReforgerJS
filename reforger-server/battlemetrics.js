@@ -1,3 +1,6 @@
+const { classifyUserQueryInfo } = require('../helpers');
+
+
 class BattleMetrics {
   constructor(config) {
     this.config = config;
@@ -60,26 +63,42 @@ class BattleMetrics {
     }
   }
 
-  async fetchBMPlayerId(reforgerUUID) {
+  async fetchBMPlayerId(playerIdentifier) {
     if (!this.isInitialized) { return null; }
+
+    // Get the shape of the playerIdentifier using helper classifyUserQueryInfo()
+    logger.verbose(`[${this.name}] Fetching BattleMetrics player ID for identifier: ${playerIdentifier}`);
+    playerIdentifier = playerIdentifier.trim();
+    if (!playerIdentifier || playerIdentifier.length === 0) {
+      logger.warn('playerIdentifier is empty or invalid.');
+      return null;
+    }
+
+    const identifierType = classifyUserQueryInfo(playerIdentifier);
+    const validIdentifierTypes = ['playerUID', 'steamID'];
+    if (!validIdentifierTypes.includes(identifierType)) {
+      logger.warn(`Unsupported identifier type ${identifierType} for identifier ${playerIdentifier}`);
+      return null;
+    }
 
     // we need to get ['data']['relationships']['player']['data']['id'] from the response
     const options = {
-      type: 'identifier',
+      type: "identifier",
       attributes: {
-        type: 'reforgerUUID',
-        identifier: reforgerUUID
+        type: identifierType == 'playerUID' ? 'reforgerUUID' : 'steamID', // named differently in BattleMetrics
+        identifier: playerIdentifier
       }
     };
+
     // now use this.makeRequest to fetch the player ID
     try {
       const response = await this.makeRequest('/players/quick-match', 'POST', { data: [options] });
       if (response && response.data && response.data.length > 0) {
         const playerId = response.data[0].relationships.player.data.id;
-        logger.info(`Player ID for Reforger UUID ${reforgerUUID}: ${playerId}`);
+        logger.info(`BM player ID for identifier ${playerIdentifier}: ${playerId}`);
         return playerId;
       } else {
-        logger.warn(`No player found for Reforger UUID: ${reforgerUUID}`);
+        logger.warn(`No player found for identifier: ${playerIdentifier}`);
         return null;
       }
     } catch (error) {
@@ -88,11 +107,13 @@ class BattleMetrics {
     }
   }
 
-  async fetchBMPlayerURL(reforgerUUID) {
+  // Fetch the BattleMetrics player URL using the player identifier
+  // This can be either a Reforger UUID or a Steam ID
+  async fetchBMPlayerURL(playerIdentifier) {
     if (!this.isInitialized) { return null; }
 
-    logger.verbose(`[${this.name}] Fetching BattleMetrics player URL for Reforger UUID: ${reforgerUUID}`);
-    const playerId = await this.fetchBMPlayerId(reforgerUUID);
+    logger.verbose(`[${this.name}] Fetching BattleMetrics player URL for identifier: ${playerIdentifier}`);
+    const playerId = await this.fetchBMPlayerId(playerIdentifier);
     return playerId ? `https://www.battlemetrics.com/rcon/players/${playerId}` : null;
   }
 }

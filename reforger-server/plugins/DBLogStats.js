@@ -1,5 +1,4 @@
 const { EventEmitter } = require('events');
-const mysql = require("mysql2/promise");
 const fs = require("fs").promises;
 const pathModule = require("path");
 const logger = require("../logger/logger");
@@ -59,7 +58,7 @@ class DBLogStats extends EventEmitter {
       try {
         await fs.access(this.folderPath);
       } catch (err) {
-        logger.error(`[${this.name}] Folder path '${this.folderPath}' not found. Plugin disabled.`);
+        logger.error(`[${this.name}] Folder path '${this.folderPath}' not found. Plugin disabled: (${err.message})`);
         return;
       }
 
@@ -79,7 +78,6 @@ class DBLogStats extends EventEmitter {
       // Create/ensure database schema
       await this.setupSchema();
       await this.migrateSchema();
-      // await this.clearTable();
 
       // Start the logging interval
       this.startLogging();
@@ -93,7 +91,8 @@ class DBLogStats extends EventEmitter {
     const createTableQuery = `
       CREATE TABLE IF NOT EXISTS \`${this.tableName}\` (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        playerUID VARCHAR(255) NOT NULL UNIQUE,
+        playerUID VARCHAR(255) NOT NULL,
+        server_name VARCHAR(255) NULL,
         level FLOAT DEFAULT 0,
         level_experience FLOAT DEFAULT 0,
         session_duration FLOAT DEFAULT 0,
@@ -133,14 +132,19 @@ class DBLogStats extends EventEmitter {
         lightban_streak FLOAT DEFAULT 0,
         heavyban_kick_session_duration FLOAT DEFAULT 0,
         heavyban_streak FLOAT DEFAULT 0,
-        created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY playerUID_server_name (playerUID, server_name),
+        KEY idx_playerUID (playerUID),
+        KEY idx_server_name (server_name)
+      ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `;
     try {
-      const connection = await process.mysqlPool.getConnection();
-      await connection.query(createTableQuery);
-      connection.release();
-      logger.verbose(`[${this.name}] Database schema ensured for table '${this.tableName}'.`);
+      // Use executeWithRetry for better handling of potential connection issues
+      await this.executeWithRetry(async (connection) => {
+        await connection.query(createTableQuery);
+        logger.verbose(`[${this.name}] Database schema ensured for table '${this.tableName}'.`);
+        return true;
+      });
     } catch (error) {
       logger.error(`[${this.name}] Failed to set up database schema: ${error.message}`);
       throw error;
@@ -148,10 +152,12 @@ class DBLogStats extends EventEmitter {
   }
 
   async migrateSchema() {
+    let connection;
     try {
       const alterQueries = [];
-      const connection = await process.mysqlPool.getConnection();
+      connection = await process.mysqlPool.getConnection();
       
+      // Check existing columns
       const [columns] = await connection.query(`
         SELECT COLUMN_NAME 
         FROM INFORMATION_SCHEMA.COLUMNS 
@@ -180,52 +186,109 @@ class DBLogStats extends EventEmitter {
         alterQueries.push('ADD COLUMN heavyban_streak FLOAT DEFAULT 0');
       }
 
-      // Now check if we still have a unique constraint on playerUID, and if we do, remove it
+      // Check for existing indexes and update them properly
       const [indexes] = await connection.query(`
-        SELECT INDEX_NAME
+        SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE
         FROM INFORMATION_SCHEMA.STATISTICS
         WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = '${this.tableName}'
-        AND COLUMN_NAME = 'playerUID'
-        AND NON_UNIQUE = 0
       `);
-
-      if (indexes.length > 0 && indexes[0].INDEX_NAME === 'playerUID') {
+      
+      // Group indexes by name for easier processing
+      const indexMap = {};
+      indexes.forEach(idx => {
+        if (!indexMap[idx.INDEX_NAME]) {
+          indexMap[idx.INDEX_NAME] = {
+            name: idx.INDEX_NAME,
+            columns: [],
+            nonUnique: idx.NON_UNIQUE === 1
+          };
+        }
+        indexMap[idx.INDEX_NAME].columns.push(idx.COLUMN_NAME);
+      });
+      
+      // Check for the unique constraint on playerUID and update it if needed
+      if (indexMap.playerUID && indexMap.playerUID.columns.length === 1 && 
+          indexMap.playerUID.columns[0] === 'playerUID' && !indexMap.playerUID.nonUnique) {
+        logger.verbose(`[${this.name}] Found unique constraint on playerUID, updating to composite key`);
         alterQueries.push('DROP INDEX playerUID');
-        alterQueries.push('ADD UNIQUE INDEX playerUID_server_name (playerUID, server_name)');
+        
+        // Only add the composite index if it doesn't exist
+        if (!indexMap.playerUID_server_name) {
+          alterQueries.push('ADD UNIQUE INDEX playerUID_server_name (playerUID, server_name)');
+        }
       }
       
+      // Add individual indexes for performance if they don't exist
+      if (!indexMap.idx_playerUID && !indexMap.PRIMARY && !indexMap.playerUID) {
+        alterQueries.push('ADD INDEX idx_playerUID (playerUID)');
+      }
+      
+      // Only add server_name index if it doesn't already exist in any form
+      const hasServerNameIndex = Object.values(indexMap).some(index => 
+        index.columns.includes('server_name') && index.name !== 'playerUID_server_name'
+      );
+      
+      if (!hasServerNameIndex && !indexMap.idx_server_name && columnNames.includes('server_name')) {
+        alterQueries.push('ADD INDEX idx_server_name (server_name)');
+      }
+      
+      // Check if table is using the correct character set and collation
+      const [tableInfo] = await connection.query(`
+        SELECT TABLE_COLLATION
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = '${this.tableName}'
+      `);
+      
+      if (tableInfo.length > 0 && !tableInfo[0].TABLE_COLLATION.startsWith('utf8mb4')) {
+        alterQueries.push('CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+        logger.info(`[${this.name}] Converting table to utf8mb4 character set`);
+      }
+      
+      // Apply alterations in smaller batches to reduce lock time
       if (alterQueries.length > 0) {
-        const alterQuery = `ALTER TABLE ${this.tableName} ${alterQueries.join(', ')}`;
-        await connection.query(alterQuery);
+        logger.verbose(`[${this.name}] Applying ${alterQueries.length} schema changes to table '${this.tableName}'`);
+        
+        // Execute alterations in smaller batches to reduce lock time
+        for (let i = 0; i < alterQueries.length; i += 2) {
+          const batchQueries = alterQueries.slice(i, i + 2);
+          const alterQuery = `ALTER TABLE ${this.tableName} ${batchQueries.join(', ')}`;
+          
+          try {
+            await connection.query(alterQuery);
+            logger.verbose(`[${this.name}] Applied schema changes: ${batchQueries.join(', ')}`);
+          } catch (alterError) {
+            // Check for specific errors that can be safely ignored
+            if (alterError.code === 'ER_DUP_KEYNAME') {
+              logger.verbose(`[${this.name}] Index already exists, skipping: ${alterError.message}`);
+            } else if (alterError.code === 'ER_CANT_DROP_FIELD_OR_KEY' && alterError.message.includes("check that column/key exists")) {
+              logger.verbose(`[${this.name}] Index to drop doesn't exist, skipping: ${alterError.message}`);
+            } else {
+              // Log the error but continue with other alterations
+              logger.error(`[${this.name}] Error applying alteration: ${alterError.message} (Code: ${alterError.code || 'unknown'})`);
+            }
+          }
+        }
         
         if (this.serverInstance.logger) {
-          this.serverInstance.logger.info(`DBLog: Migrated stats table with new columns: ${alterQueries.join(', ')}`);
+          this.serverInstance.logger.info(`DBLog: Migrated stats table with changes: ${alterQueries.join(', ')}`);
         }
       } else {
         if (this.serverInstance.logger) {
           this.serverInstance.logger.info(`DBLog: No migration needed for stats table.`);
         }
       }
-      
-      connection.release();
     } catch (error) {
       if (this.serverInstance.logger) {
         this.serverInstance.logger.error(`Error migrating schema: ${error.message}`);
       }
+      logger.error(`[${this.name}] Error during schema migration: ${error.message}`);
       throw error;
-    }
-  }
-
-  async clearTable() {
-    logger.verbose(`[${this.name}] Clearing table '${this.tableName}'...`);
-    try {
-      const connection = await process.mysqlPool.getConnection();
-      await connection.query(`DELETE FROM \`${this.tableName}\``);
-      connection.release();
-      logger.verbose(`[${this.name}] Cleared table '${this.tableName}'.`);
-    } catch (error) {
-      logger.error(`[${this.name}] Failed to clear table: ${error.message}`);
+    } finally {
+      if (connection) {
+        connection.release();
+      }
     }
   }
 
@@ -244,6 +307,10 @@ class DBLogStats extends EventEmitter {
       return;
     }
 
+    logger.verbose(`[${this.name}] Logging stats for ${Object.keys(playerStatsHash).length} players.`);
+    let totalAffectedRows = 0;
+    const totalPlayers = Object.keys(playerStatsHash).length;
+    
     const columns = [
       'playerUID', 'server_name', 'level', 'level_experience', 'session_duration', 
       'sppointss0', 'sppointss1', 'sppointss2', 'warcrimes', 'distance_walked', 
@@ -263,12 +330,19 @@ class DBLogStats extends EventEmitter {
       .map(col => `${col} = VALUES(${col})`)
       .join(', ');
 
-    const BATCH_SIZE = 500;
+    // Smaller batch size to reduce deadlock probability
+    const BATCH_SIZE = 250;
     const playerEntries = Object.entries(playerStatsHash);
+    
+    // Add random jitter to help avoid deadlocks between multiple servers
+    const jitter = Math.floor(Math.random() * 1000);
+    await new Promise(resolve => setTimeout(resolve, jitter));
+    
     for (let i = 0; i < playerEntries.length; i += BATCH_SIZE) {
       const batch = playerEntries.slice(i, i + BATCH_SIZE);
       const values = [];
       const placeholders = [];
+      
       for (const [playerUID, stats] of batch) {
         placeholders.push(`(${Array(columns.length).fill('?').join(', ')})`);
         values.push(
@@ -315,14 +389,41 @@ class DBLogStats extends EventEmitter {
           stats.heavyban_streak || 0
         );
       }
+      
       const query = `
         INSERT INTO ${this.tableName} (${columns.join(', ')})
         VALUES ${placeholders.join(', ')}
         ON DUPLICATE KEY UPDATE ${updateStatements}
       `;
-      const connection = await process.mysqlPool.getConnection();
-      const [result] = await connection.execute(query, values);
-      await connection.release();
+
+      try {
+        // Use executeWithRetry to handle transactions and deadlocks
+        const affectedRows = await this.executeWithRetry(async (connection) => {
+          // Execute the query within the transaction
+          await connection.execute(query, values);
+          
+          // Get affected rows
+          const [result] = await connection.query(`SELECT ROW_COUNT() AS affectedRows`);
+          return result && result[0] && result[0].affectedRows ? result[0].affectedRows : 0;
+        });
+        
+        // Update total affected rows
+        totalAffectedRows += affectedRows;
+        
+      } catch (error) {
+        // If all retries failed in executeWithRetry, log the error and continue with next batch
+        logger.error(`[${this.name}] Failed to process batch after multiple retry attempts: ${error.message}`);
+      }
+      
+      // Add a small delay between batches to reduce contention
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Check if the batch was logged successfully
+    if (totalAffectedRows < totalPlayers) {
+      logger.error(`[${this.name}] Not all player stats were logged successfully. Expected: ${totalPlayers}, Logged: ${totalAffectedRows}`);
+    } else {
+      logger.verbose(`[${this.name}] Successfully logged batch of ${totalPlayers} player stats.`);
     }
 
     this.emitEvent("playerStatsUpdated");
@@ -501,7 +602,56 @@ class DBLogStats extends EventEmitter {
     }
     logger.info(`[${this.name}] Cleanup completed.`);
   }
-  
+
+  async executeWithRetry(callback, maxRetries = 5) {
+    let retries = maxRetries;
+    let lastError = null;
+    
+    while (retries > 0) {
+      let connection;
+      try {
+        connection = await process.mysqlPool.getConnection();
+        await connection.beginTransaction();
+        
+        // Execute the callback with the connection
+        const result = await callback(connection);
+        
+        // If we reach here, commit the transaction
+        await connection.commit();
+        connection.release();
+        return result;
+        
+      } catch (error) {
+        lastError = error;
+        
+        // Try to rollback if we have a connection
+        if (connection) {
+          try {
+            await connection.rollback();
+          } catch (rollbackError) {
+            logger.error(`[${this.name}] Error rolling back transaction: ${rollbackError.message}`);
+          } finally {
+            connection.release();
+          }
+        }
+        
+        // If it's a deadlock, retry after a backoff
+        if (error.errno === 1213) { // MySQL deadlock error code
+          retries--;
+          const backoffDelay = Math.floor(Math.random() * 1000) + 500 * (maxRetries - retries); 
+          logger.warn(`[${this.name}] Deadlock detected, retrying (${retries} attempts left) after ${backoffDelay}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        } else {
+          // For other errors, don't retry
+          logger.error(`[${this.name}] Database error: ${error.message}`);
+          break;
+        }
+      }
+    }
+    
+    // If we got here, all retries failed
+    throw lastError || new Error('Transaction failed after multiple retries');
+  }
 }
 
 module.exports = DBLogStats;

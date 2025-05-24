@@ -31,6 +31,13 @@ module.exports = {
                             { name: 'Minutes played', value: 'minutes_played_in_league' }
                         )
                 )
+                // Add an optional identifier for the player
+                .addStringOption(option =>
+                    option
+                        .setName('identifier')
+                        .setDescription('An optional identifier of a player to look up')
+                        .setRequired(false)
+                )
         )
         .addSubcommand(subcommand =>
             subcommand

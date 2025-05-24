@@ -1,5 +1,4 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
-const e = require("express");
 const logger = require("../logger/logger");
 const { escapeMarkdown } = require('../../helpers');
 
@@ -7,6 +6,7 @@ module.exports = async (
   interaction,
   serverInstance,
   discordClient,
+  // eslint-disable-next-line no-unused-vars
   extraData = {}
 ) => {
   // Get the subcommand and options
@@ -19,38 +19,6 @@ module.exports = async (
       content: "RCON command configuration is missing.",
       flags: MessageFlags.Ephemeral,
     });
-  }
-
-  // Get user roles
-  const userRoles = interaction.member.roles.cache.map((role) => role.id);
-
-  // Function to get the user's maximum role level
-  function getUserMaxRoleLevel(userRoles) {
-    let maxLevel = 0;
-    for (const [levelKey, roleNameArray] of Object.entries(config.roleLevels)) {
-      const numericLevel = parseInt(levelKey, 10);
-      if (isNaN(numericLevel)) continue;
-
-      for (const roleName of roleNameArray) {
-        const discordRoleID = config.roles[roleName];
-        if (discordRoleID && userRoles.includes(discordRoleID)) {
-          if (numericLevel > maxLevel) {
-            maxLevel = numericLevel;
-          }
-        }
-      }
-    }
-    return maxLevel;
-  }
-
-  // Function to check if user has permission for a specific subcommand
-  function hasPermissionForSubcommand(subcommandName) {
-    const requiredLevel = rconConfig[subcommandName];
-    if (!requiredLevel) {
-      return false;
-    }
-    const userLevel = getUserMaxRoleLevel(userRoles);
-    return userLevel >= requiredLevel;
   }
 
   // Handle the interaction state
@@ -70,13 +38,6 @@ module.exports = async (
     // Handle restart subcommand
     if (subcommand === "restart") {
       const confirm = interaction.options.getString("confirm");
-
-      if (!hasPermissionForSubcommand("restart")) {
-        return interaction.editReply({
-          content: "You do not have permission to restart the server.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
 
       if (confirm !== "CONFIRM") {
         return interaction.editReply({
@@ -105,13 +66,6 @@ module.exports = async (
     if (subcommand === "shutdown") {
       const confirm = interaction.options.getString("confirm");
 
-      if (!hasPermissionForSubcommand("shutdown")) {
-        return interaction.editReply({
-          content: "You do not have permission to shut down the server.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
       if (confirm !== "CONFIRM") {
         return interaction.editReply({
           content: "Type CONFIRM to proceed with a shutdown.",
@@ -138,13 +92,6 @@ module.exports = async (
     // Handle kick subcommand
     if (subcommand === "kick") {
       const playerId = interaction.options.getString("id");
-
-      if (!hasPermissionForSubcommand("kick")) {
-        return interaction.editReply({
-          content: "You do not have permission to kick a player.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
 
       if (!playerId) {
         return interaction.editReply({
@@ -177,13 +124,6 @@ module.exports = async (
       const playerId = interaction.options.getString("id");
       const duration = interaction.options.getInteger("duration");
       const reason = interaction.options.getString("reason");
-
-      if (!hasPermissionForSubcommand("ban")) {
-        return interaction.editReply({
-          content: "You do not have permission to ban players.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
 
       if (!playerId) {
         return interaction.editReply({
@@ -229,13 +169,6 @@ module.exports = async (
     if (subcommand === "whois") {
       const playerInfo = interaction.options.getString("identifier");
 
-      if (!hasPermissionForSubcommand("whois")) {
-        return interaction.editReply({
-          content: "You do not have permission to use whois.",
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
       // look at the shape of playerInfo:
       // If it's a Reforger UUID, it should be 8-4-4-4-12
       // If it's blank, we need to get the entire player list
@@ -274,7 +207,7 @@ module.exports = async (
         });
       }
 
-      foundPlayer = matchingPlayers[0];
+      let foundPlayer = matchingPlayers[0];
 
       // If we found a single match, use that
 

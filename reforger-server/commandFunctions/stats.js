@@ -1,5 +1,4 @@
 const { EmbedBuilder } = require('discord.js');
-const mysql = require('mysql2/promise');
 const { escapeMarkdown } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {

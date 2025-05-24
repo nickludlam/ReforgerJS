@@ -47,6 +47,7 @@ class ServerStatus {
         try {
           logger.verbose(`ServerStatus plugin: Attempting to fetch existing message ${pluginConfig.messageID}`);
           this.message = await this.channel.messages.fetch(pluginConfig.messageID);
+        // eslint-disable-next-line no-unused-vars
         } catch (error) {
           logger.info(`ServerStatus plugin: Could not fetch existing message, creating a new one`);
           this.message = await this.postInitialEmbed();

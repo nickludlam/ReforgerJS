@@ -173,7 +173,7 @@ class ReforgerServer extends EventEmitter {
           this.rcon.players.push(newPlayer);
         }
       }
-      logger.verbose(`Player joined: ${playerName} (#${playerNumber}) from ${playerIP} - Device: ${device || 'Unknown'}, SteamID: ${steamID || 'None'}, BE GUID: ${beGUID || 'Unknown'}`);
+      // logger.verbose(`Player joined: ${playerName} (#${playerNumber}) from ${playerIP} - Device: ${device || 'Unknown'}, SteamID: ${steamID || 'None'}, BE GUID: ${beGUID || 'Unknown'}`);
       this.emit("playerJoined", data);
     });
 
@@ -181,14 +181,11 @@ class ReforgerServer extends EventEmitter {
       if (this.rcon) {
         const existing = this.rcon.players.find((p) => p.name === data.playerName);
         if (existing) {
-          let updated = false;
           if (!existing.id && data.playerId) {
             existing.id = parseInt(data.playerId, 10);
-            updated = true;
           }
           if (!existing.uid && data.playerUid) {
             existing.uid = data.playerUid;
-            updated = true;
           }
         } else {
           if (data.playerName && data.playerId && data.playerUid) {

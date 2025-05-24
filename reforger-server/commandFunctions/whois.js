@@ -1,4 +1,3 @@
-const mysql = require("mysql2/promise");
 const { escapeMarkdown, classifyUserQueryInfo } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
@@ -58,29 +57,22 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 return;
             }
 
-            if (dbField === 'playerName' && rows.length > 1) {
-                const displayCount = Math.min(rows.length, 10);
+            const maxResults = 5;
+
+            if (rows.length > 1) {
+                const displayCount = Math.min(rows.length, maxResults);
                 let responseMessage = `Found ${rows.length} players matching "${identifier}". `;
                 
-                if (rows.length > 10) {
-                    responseMessage += `Showing first 10 results. Please refine your search for more specific results.\n\n`;
-                } else {
-                    responseMessage += `Full details for each match:\n\n`;
+                if (rows.length > maxResults) {
+                    responseMessage += `Showing first ${maxResults} results. Please refine your search for more specific results.\n\n`;
                 }
                 
                 for (let i = 0; i < displayCount; i++) {
                     const player = rows[i];
-                    let playerDetails = `${i+1}. ${player.playerName || 'Unknown'}\n` +
-                                        `   UUID: ${player.playerUID || 'Missing'}\n` +
-                                        `   IP: ${player.playerIP || 'Missing'}\n` +
-                                        `   beGUID: ${player.beGUID || 'Missing'}\n` +
+                    let playerDetails = `${i+1}. **${escapeMarkdown(player.playerName) || 'Unknown'}**\n` +
+                                        `   Reforger UUID: ${player.playerUID || 'Missing'}\n` +
+                                        `   be GUID: ${player.beGUID || 'Missing'}\n` +
                                         `   Device: ${player.device || 'Not Found'}\n`;
-                    
-                    if (player.device === 'PC') {
-                        playerDetails += `   SteamID: ${player.steamID || 'Not Found'}\n`;
-                    }
-                    
-                    playerDetails +=    `   Last connected: ${player.lastSeen || 'Not Found'}\n`;
                     
                     responseMessage += playerDetails + '\n';
                 }
@@ -89,12 +81,10 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 return;
             }
 
+            // If we're here, we have a single result
 
-            // If it's a single result, we can fetch the BattleMetrics player URL
-            let bmPlayerURL = null;
-            if (rows.length == 1) {
-              bmPlayerURL = await process.battleMetrics.fetchBMPlayerURL(rows[0].playerUID);
-            }
+            const bmReforgerURL = `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${rows[0].playerUID}&method=quick&redirect=1`
+            const bmSteamURL = rows[0].steamID ? `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${rows[0].steamID}&method=quick&redirect=1` : null;
 
             const embeds = [];
             let currentEmbed = {
@@ -107,12 +97,9 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 }
             };
 
-            rows.forEach((player, index) => {
+            rows.forEach((player) => {
                 let playerInfo = `Name: ${escapeMarkdown(player.playerName) || 'Missing Player Name'}` +
-                                 `\nReforger UUID: ${player.playerUID || 'Missing UUID'}`;
-                if (bmPlayerURL) {
-                    playerInfo += `\nBM URL: ${bmPlayerURL}`;
-                }
+                                 `\nReforger ID: ${player.playerUID || 'Missing UUID'}`;
                 playerInfo +=  `\nbe GUID: ${player.beGUID || 'Missing beGUID'}` +
                                `\nIP Address: ${player.playerIP || 'Missing IP Address'}` +
                                `\nDevice: ${player.device || 'Not Found'}`;
@@ -128,8 +115,15 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 const playerIsOnlineLine = isOnline ? 'Currently Online' : 'Currently Offline';
                 playerInfo += `\nStatus: ${playerIsOnlineLine}`;
 
+                if (bmReforgerURL) {
+                    playerInfo += `\n[BattleMetrics Reforger ID Lookup](${bmReforgerURL})`;
+                }
+                if (bmSteamURL) {
+                    playerInfo += `\n[BattleMetrics SteamID Lookup](${bmSteamURL})`;
+                }
+
                 const playerData = {
-                    name: rows.length === 0 ? 'Player details' : `Player ${index + 1} details`,
+                    name: 'Player details',
                     value: playerInfo
                 };
 

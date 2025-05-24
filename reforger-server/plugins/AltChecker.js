@@ -1,4 +1,3 @@
-const mysql = require("mysql2/promise");
 const { EmbedBuilder } = require("discord.js");
 const logger = require("../logger/logger");
 const { escapeMarkdown, parseLogDate } = require('../../helpers');

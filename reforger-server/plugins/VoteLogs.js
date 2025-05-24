@@ -1,4 +1,3 @@
-const mysql = require("mysql2/promise");
 const { parseLogDate } = require("../../helpers");
 
 class VoteLogs {

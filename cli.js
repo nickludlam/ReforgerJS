@@ -177,14 +177,50 @@ async function handleStartCommand(leagueInstance) {
  */
 async function handleShowCommand(leagueInstance) {
   logger.info('Executing show command...');
+
+  let playerUID = null;
+  // Check if we have an process.argv[3]
+  if (process.argv[3]) {
+    playerUID = process.argv[3];
+    console.log(`Showing stats for player UID: ${playerUID}`);
+  } else {
+    console.log("No player UID provided. Showing stats for top players.");
+  }
   
   function showLeagueResults(stats, statName, sortKey) {
-    console.log(`Top 5 players by ${statName} in week: ${stats.league.number}`);
+    // This now works differently. When the stats come in, we need to check for the presence of the requestedPlayer
+    // If this is not present, it functions as normal, and gives the top N players
+    // If it's present, we must take requqestedPlayer.position as the TRUE position of the player within the players list, 
+    // when looking at players.playerUID
+
+    // requestedPlayer: {
+    //   uid: 'dfc21757-cb9e-474e-9ea1-3e4c2bb0477b',
+    //   position: 43,
+    //   totalPlayers: 125
+    // }
+
+    // So we must calculate the offset we apply to each row in the players list.
+    // We need to check if the requestedPlayer is present in the stats
+    let offset = 0;
+    let title = `Top ${stats.players.length} results for ${statName} in week: ${stats.league.number}`;
+    if (stats.requestedPlayer) {
+      // Check if the requestedPlayer is present in the stats
+      const requestedPlayer = stats.players.find(player => player.playerUID === stats.requestedPlayer.uid);
+      if (requestedPlayer) {
+        // Get the index of the requestedPlayer in the players list
+        const requestedPlayerIndex = stats.players.indexOf(requestedPlayer);
+        // Calculate the offset.  e.g. if the index is 3, and requestedPlayer.position is 43, we need to add 40 to the index
+        offset = stats.requestedPlayer.position - requestedPlayerIndex - 1; // An additional -1 because the index is 0-based
+        title = `Results for ${statName} - ${requestedPlayer.playerName} is ${stats.requestedPlayer.position} of ${stats.requestedPlayer.totalPlayers}`;
+      }
+    }
+
+    console.log(title);
     
     // Create a dynamic object where the property name comes from sortKey parameter
     table(stats.players.map((player, index) => {
       const playerData = {
-        rank: index + 1,
+        rank: index + 1 + offset,
         playerName: player.playerName
       };
       
@@ -197,33 +233,39 @@ async function handleShowCommand(leagueInstance) {
   }
 
   // Now lets produce a little ASCI table which displays the playername and the diff_kills of the top 5 players
-  const mostKills = await leagueInstance.getLeagueStatsDiff(8, 'diff_kills');
+  const mostKills = await leagueInstance.getLeagueStatsDiff(playerUID, 8, 'diff_kills');
+  // dump the result to the console
   showLeagueResults(mostKills, 'kills', 'diff_kills');
 
-  const mostAIKills = await leagueInstance.getLeagueStatsDiff(8, 'diff_ai_kills');
+  const mostAIKills = await leagueInstance.getLeagueStatsDiff(playerUID, 8, 'diff_ai_kills');
   showLeagueResults(mostAIKills, 'AI Kills', 'diff_ai_kills');
 
-  const bestDeaths = await leagueInstance.getLeagueStatsDiff(8, 'diff_deaths');
+  const bestDeaths = await leagueInstance.getLeagueStatsDiff(playerUID, 8, 'diff_deaths');
   showLeagueResults(bestDeaths, 'deaths', 'diff_deaths');
 
-  const bestKD = await leagueInstance.getLeagueStatsDiff(8, 'kd_ratio');
+  const bestKD = await leagueInstance.getLeagueStatsDiff(playerUID, 8, 'kd_ratio');
   showLeagueResults(bestKD, 'K/D ratio', 'kd_ratio');
 
-  const bestInfantry = await leagueInstance.getLeagueStatsDiff(8, 'diff_sppointss0');
-  showLeagueResults(bestInfantry, 'infantry points', 'diff_sppointss0');  
-
-  const bestVehicle = await leagueInstance.getLeagueStatsDiff(8, 'diff_sppointss1');
-  showLeagueResults(bestVehicle, 'logistic points', 'diff_sppointss1');
-
-  const bestSupport = await leagueInstance.getLeagueStatsDiff(8, 'diff_sppointss2');
-  showLeagueResults(bestSupport, 'support points', 'diff_sppointss2');
-
-  const bestTeamKiller = await leagueInstance.getLeagueStatsDiff(8, 'diff_friendly_kills');
+  const bestTeamKiller = await leagueInstance.getLeagueStatsDiff(playerUID, 8, 'diff_friendly_kills');
   showLeagueResults(bestTeamKiller, 'team kills', 'diff_friendly_kills');
 
   // minutes_played
-  const mostMinutesPlayed = await leagueInstance.getLeagueStatsDiff(8, 'minutes_played');
-  showLeagueResults(mostMinutesPlayed, 'minutes played', 'minutes_played');
+  const mostMinutesPlayed = await leagueInstance.getLeagueStatsDiff(playerUID, 9, 'minutes_played_in_league');
+  console.log(mostMinutesPlayed);
+  // convert the minutes_played_in_league to hours
+  // mostMinutesPlayed.players.forEach(player => {
+  //   player.minutes_played_in_league = Math.floor(player.minutes_played_in_league / 60);
+  // });
+  showLeagueResults(mostMinutesPlayed, 'minutes played', 'minutes_played_in_league');
+
+
+  const mostMinutesPlayed2 = await leagueInstance.getLeagueStatsDiff(null, 85, 'minutes_played_in_league');
+  // convert the minutes_played_in_league to hours
+  // mostMinutesPlayed.players.forEach(player => {
+  //   player.minutes_played_in_league = Math.floor(player.minutes_played_in_league / 60);
+  // });
+  showLeagueResults(mostMinutesPlayed2, 'minutes played', 'minutes_played_in_league');
+
 }
 
 /**
