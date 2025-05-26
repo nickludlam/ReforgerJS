@@ -17,6 +17,8 @@ class EXDLeague {
     this.leagueStatsTableName = "exd_league_stats";
     this.leagueSettingsTableName = "exd_league_settings";
     this.playerStatsTableName = "player_stats";
+
+    this.leagueStatsCache = new Map();
   }
 
   async prepareToMount(serverInstance) {
@@ -481,6 +483,8 @@ class EXDLeague {
       connection.release();
       
       logger.info(`[${this.name}] League stats updated successfully for league ${currentLeagueNumber} - ${updateResult.affectedRows} players updated in ${elapsed}ms`);
+
+      this.validateLeagueEntrants();
     } catch (error) {
       logger.error(`[${this.name}] Error updating league stats: ${error.message}`);
       if (connection) {
@@ -496,23 +500,20 @@ class EXDLeague {
   
   startTrackingActivePlayers() {
     const intervalMs = this.intervalMinutes * 60 * 1000;
-    this.updateCurrentLeagueMinutesPlayed();
     this.interval = setInterval(() => this.updateCurrentLeagueMinutesPlayed(), intervalMs);
   }
 
   async updateCurrentLeagueMinutesPlayed() {
     logger.verbose(`[${this.name}] Updating current league minutes played...`);
 
-    const players = this.serverInstance?.players;
-    if (!Array.isArray(players) || players.length === 0) {
-      logger.warn(`[${this.name}] No players found. Skipping update.`);
-      return;
-    }
+    const currentPlayers = this.serverInstance.rcon.players.filter((p) => {
+      // p.uid must be present
+      return p.uid && p.uid.trim() !== "" && !this.blacklistBEGUIDs.includes(p.beguid?.toLowerCase());
+    });
+    const currentPlayerUIDs = currentPlayers.map(p => p.uid);
 
-    // Collect the playerUIDs from the players array
-    const playerUIDs = players.map((player) => player.uid).filter((uid) => uid);
-    if (playerUIDs.length === 0) {
-      logger.warn(`[${this.name}] No playerUIDs found. Skipping update.`);
+    if (currentPlayers.length === 0) {
+      logger.warn(`[${this.name}] No players found. Skipping update.`);
       return;
     }
 
@@ -536,12 +537,12 @@ class EXDLeague {
 
       const updateQuery = `
         UPDATE ${this.leagueStatsTableName}
-        SET minutes_played = minutes_played + ?
+        SET minutes_played = IFNULL(minutes_played, 0) + ?
         WHERE playerUID IN (?)
         AND league_number = ? and server_name = ? AND is_initial_snapshot = 0
       `;
 
-      await connection.query(updateQuery, [this.intervalMinutes, playerUIDs, currentLeagueNumber, this.serverName]);
+      await connection.query(updateQuery, [this.intervalMinutes, currentPlayerUIDs, currentLeagueNumber, this.serverName]);
       // commit the transaction
       await connection.commit();
 
@@ -552,11 +553,79 @@ class EXDLeague {
       logger.verbose(`[${this.name}] Updating league minutes played took ${elapsed}ms`);
 
       connection.release();
-      logger.info(`[${this.name}] Updated current ${this.serverName} league minutes played for ${playerUIDs.length} players in league number ${currentLeagueNumber}.`);
+      logger.info(`[${this.name}] Updated current ${this.serverName} league minutes played for ${currentPlayerUIDs.length} players in league number ${currentLeagueNumber}.`);
     } catch (error) {
       logger.error(`[${this.name}] Error updating current league minutes played: ${error.message}`);
       // rollback the transaction
       if (connection) await connection.rollback();
+    } finally {
+      if (connection) connection.release();
+    
+    }
+  }
+
+  /*
+  * We want to load leagueStatsCache with every player in the current league
+  * and their stats. We then periodically check whether the updated stats are lower than the cached stats.
+  * If they are, we log a warning as this should not happen.
+  */
+  async validateLeagueEntrants() {
+    logger.verbose(`[${this.name}] Validating league entrants...`);
+    let connection = null;
+
+    try {
+      connection = await process.mysqlPool.getConnection();
+      const currentLeagueNumber = await this.getCurrentLeagueNumber(connection);
+      if (currentLeagueNumber === null) {
+        logger.warn(`[${this.name}] No valid league number found. Skipping validation.`);
+        return;
+      }
+
+      // Get all players in the current league
+      const [rows] = await connection.query(`
+        SELECT playerUID, minutes_played, kills, deaths, ai_kills, friendly_kills, friendly_ai_kills,
+               distance_walked, distance_driven, bandage_friendlies, tourniquet_friendlies,
+               saline_friendlies, morphine_friendlies
+        FROM ${this.leagueStatsTableName}
+        WHERE league_number = ? AND is_initial_snapshot = 0 AND server_name = ?
+      `, [currentLeagueNumber, this.serverName]);
+
+      if (rows.length === 0) {
+        logger.warn(`[${this.name}] No players found in current league ${currentLeagueNumber}.`);
+        return;
+      }
+
+      // Populate the cache
+      for (const row of rows) {
+        if (!row.playerUID) {
+          return;
+        }
+        if (this.leagueStatsCache.has(row.playerUID)) {
+          const cachedRow = this.leagueStatsCache.get(row.playerUID);
+          // Check if the new row has lower stats than the cached one
+          if (row.minutes_played < cachedRow.minutes_played ||
+              row.kills < cachedRow.kills ||
+              row.deaths < cachedRow.deaths ||
+              row.ai_kills < cachedRow.ai_kills ||
+              row.friendly_kills < cachedRow.friendly_kills ||
+              row.friendly_ai_kills < cachedRow.friendly_ai_kills ||
+              row.distance_walked < cachedRow.distance_walked ||
+              row.distance_driven < cachedRow.distance_driven ||
+              row.bandage_friendlies < cachedRow.bandage_friendlies ||
+              row.tourniquet_friendlies < cachedRow.tourniquet_friendlies ||
+              row.saline_friendlies < cachedRow.saline_friendlies ||
+              row.morphine_friendlies < cachedRow.morphine_friendlies) {
+            logger.warn(`[${this.name}] Player ${row.playerUID} has lower stats than cached stats.`);
+            logger.warn(`[${this.name}] Cached stats: ${JSON.stringify(cachedRow)}`);
+            logger.warn(`[${this.name}] New stats: ${JSON.stringify(row)}`);
+          }
+        }
+        this.leagueStatsCache.set(row.playerUID, row);
+      }
+
+      logger.info(`[${this.name}] League entrants validated. Found ${rows.length} players in league ${currentLeagueNumber}.`);
+    } catch (error) {
+      logger.error(`[${this.name}] Error validating league entrants: ${error.message}`);
     } finally {
       if (connection) connection.release();
     }
@@ -666,7 +735,6 @@ class EXDLeague {
               AND curr.server_name = ?
               AND curr.is_initial_snapshot = 0
               ${this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0 ? 'AND p.beGUID NOT IN (?)' : ''}
-              AND curr.minutes_played > 0
             ) AS filtered_stats
           ) AS ranked
           WHERE playerUID = ?
@@ -702,7 +770,6 @@ class EXDLeague {
           // Now get the actual stats with LIMIT and OFFSET
           let mainQuery = this.buildLeagueStatsDiffQuery(playerStatColumns);
           mainQuery += `
-            AND curr.minutes_played > 0
             ORDER BY ${sortBy} ${order}
             LIMIT ? OFFSET ?
           `;
@@ -730,7 +797,6 @@ class EXDLeague {
         let diffQuery = this.buildLeagueStatsDiffQuery(playerStatColumns);
         
         diffQuery += `
-          AND curr.minutes_played > 10
           ORDER BY ${sortBy} ${order}
           LIMIT ?
         `;
@@ -838,6 +904,132 @@ class EXDLeague {
       AND curr.is_initial_snapshot = 0
       ${this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0 ? 'AND p.beGUID NOT IN (?)' : ''}`;
   }
+
+
+  // Add a method to capture the current league information, and check who of the players currently playing have snapshot stats
+  async getCurrentLeagueInfo(playerUID = null) {
+    logger.verbose(`[${this.name}] Getting current league info...`);
+    let connection;
+
+    let playerUIDs = [];
+    if (playerUID) {
+      playerUIDs = [playerUID];
+    } else {
+      const players = this.serverInstance?.players;
+      if (Array.isArray(players) && players.length > 0) {
+        playerUIDs = players.map((player) => player.uid).filter((uid) => uid);
+      }
+    }
+
+    try {
+      connection = await process.mysqlPool.getConnection();
+      const currentLeagueNumber = await this.getCurrentLeagueNumber(connection);
+      if (currentLeagueNumber === null) {
+        logger.warn(`[${this.name}] No valid league number found.`);
+        return null;
+      }
+
+      const [leagueSettings] = await connection.query(
+        `SELECT * FROM ${this.leagueSettingsTableName} WHERE league_number = ? AND server_name = ?`,
+        [currentLeagueNumber, this.serverName]
+      );
+
+      if (leagueSettings.length === 0) {
+        logger.warn(`[${this.name}] No league settings found for league number ${currentLeagueNumber}.`);
+        return null;
+      }
+
+      const leagueInfo = {
+        leagueNumber: currentLeagueNumber,
+        startDate: leagueSettings[0].league_start,
+        serverName: this.serverName,
+        playerStats : [],
+      };
+
+      const query = `SELECT p.playerName, ls.* FROM ${this.leagueStatsTableName} ls
+        JOIN players p ON ls.playerUID = p.playerUID
+        WHERE ls.league_number = ? AND ls.server_name = ? AND ls.is_initial_snapshot = ? AND ls.playerUID IN (?)`;
+
+      const [baseLeagueStats] = await connection.query(query, [currentLeagueNumber, this.serverName, 1, playerUIDs]);
+      // Turn this into a Map() mapping playerUID to their base stats
+      const baseStatsMap = new Map();
+      for (const row of baseLeagueStats) {
+        baseStatsMap.set(row.playerUID, {
+          playerName: row.playerName,
+          playerUID: row.playerUID,
+          baseStats: {
+            kills: row.kills,
+            ai_kills: row.ai_kills,
+            deaths: row.deaths,
+            distance_walked: row.distance_walked,
+            distance_driven: row.distance_driven,
+            bandage_friendlies: row.bandage_friendlies,
+            tourniquet_friendlies: row.tourniquet_friendlies,
+            saline_friendlies: row.saline_friendlies,
+            morphine_friendlies: row.morphine_friendlies
+          }
+        });
+      }
+
+      const [currentLeagueStats] = await connection.query(query, [currentLeagueNumber, this.serverName, 0, playerUIDs]);
+  
+      const leaguePlayerStats = currentLeagueStats.map((row) => {
+        const baseStats = baseStatsMap.get(row.playerUID);
+        if (!baseStats) {
+          logger.warn(`[${this.name}] No base stats found for player ${row.playerUID}.`);
+          return null; // Skip players without base stats
+        }
+
+        return {
+          playerName: baseStats.playerName,
+          playerUID: row.playerUID,
+          baseStats: baseStats.baseStats,
+          currentStats: {
+            kills: row.kills,
+            ai_kills: row.ai_kills,
+            deaths: row.deaths,
+            distance_walked: row.distance_walked,
+            distance_driven: row.distance_driven,
+            bandage_friendlies: row.bandage_friendlies,
+            tourniquet_friendlies: row.tourniquet_friendlies,
+            saline_friendlies: row.saline_friendlies,
+            morphine_friendlies: row.morphine_friendlies
+          },
+          diffStats: {
+            kills: row.kills - baseStats.baseStats.kills,
+            ai_kills: row.ai_kills - baseStats.baseStats.ai_kills,
+            deaths: row.deaths - baseStats.baseStats.deaths,
+            distance_walked: row.distance_walked - baseStats.baseStats.distance_walked,
+            distance_driven: row.distance_driven - baseStats.baseStats.distance_driven,
+            bandage_friendlies: row.bandage_friendlies - baseStats.baseStats.bandage_friendlies,
+            tourniquet_friendlies: row.tourniquet_friendlies - baseStats.baseStats.tourniquet_friendlies,
+            saline_friendlies: row.saline_friendlies - baseStats.baseStats.saline_friendlies,
+            morphine_friendlies: row.morphine_friendlies - baseStats.baseStats.morphine_friendlies
+          }
+        };
+      }).filter((player) => player !== null); // Filter out any null entries
+
+      leagueInfo.playerStats = leaguePlayerStats;
+
+      connection.release();
+
+      // leagueInfo has:
+      // - leagueNumber
+      // - startDate
+      // - serverName
+      // - playersWithStats (array of playerUIDs who are currently playing and have stats in this league)
+      // - playersWithStatsCount (the count of the above array)
+
+      return leagueInfo;
+    } catch (error) {
+      logger.error(`[${this.name}] Error getting current league info: ${error.message}`);
+      if (connection) {
+        connection.release();
+      }
+      return null;
+    }
+  }
+
 
   async cleanup() {
     if (this.interval) {

@@ -171,7 +171,7 @@ sendCustomCommand(command) {
       this.players.push(newPlayer);
     }
     
-    const timeout = 120000;
+    const timeout = 120000; // 2 minutes in milliseconds
     this.players = this.players.filter(player => 
       (currentTime - (player.lastSeen || 0)) < timeout
     );

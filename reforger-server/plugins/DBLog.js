@@ -1,15 +1,82 @@
 const logger = require("../logger/logger");
 
+// Async-safe Queue implementation for player updates
+class PlayerUpdateQueue {
+  constructor(maxSize = 100) {
+    this.queue = [];
+    this.maxSize = maxSize;
+    this.processing = false;
+    this.lock = Promise.resolve(); // Used as a mutex lock
+  }
+
+  // Add item to the queue in a thread-safe way
+  async enqueue(item) {
+    // Wait for any ongoing operations to complete
+    await this.lock;
+    
+    // Create a new lock
+    let unlockNext;
+    this.lock = new Promise(resolve => {
+      unlockNext = resolve;
+    });
+
+    try {
+      this.queue.push(item);
+      return this.queue.length >= this.maxSize;
+    } finally {
+      // Release the lock
+      unlockNext();
+    }
+  }
+
+  // Get and remove all items from the queue
+  async dequeueAll() {
+    await this.lock;
+    
+    let unlockNext;
+    this.lock = new Promise(resolve => {
+      unlockNext = resolve;
+    });
+
+    try {
+      const items = [...this.queue];
+      this.queue = [];
+      return items;
+    } finally {
+      unlockNext();
+    }
+  }
+
+  // Check queue size
+  async size() {
+    await this.lock;
+    return this.queue.length;
+  }
+
+  // Check if queue is full
+  async isFull() {
+    await this.lock;
+    return this.queue.length >= this.maxSize;
+  }
+
+  // Check if queue is empty
+  async isEmpty() {
+    await this.lock;
+    return this.queue.length === 0;
+  }
+}
+
 class DBLog {
   constructor(config) {
     this.config = config;
     this.name = "DBLog Plugin";
     this.interval = null;
     this.logIntervalMinutes = 5;
+    this.playerUpdateEventQueue = new PlayerUpdateQueue(100);
     this.isInitialized = false;
     this.serverInstance = null;
     this.playerCache = new Map();
-    this.cacheTTL = 10 * 60 * 1000; 
+    this.cacheTTL = 10 * 60 * 1000;
   }
 
   async prepareToMount(serverInstance) {
@@ -33,12 +100,18 @@ class DBLog {
       const pluginConfig = this.config.plugins.find(
         (plugin) => plugin.plugin === "DBLog"
       );
-      if (
-        pluginConfig &&
-        typeof pluginConfig.interval === "number" &&
-        pluginConfig.interval > 0
-      ) {
-        this.logIntervalMinutes = pluginConfig.interval;
+      if (pluginConfig) {
+        // Check if interval is defined, is a number, and is positive
+        if (
+          pluginConfig.interval !== undefined &&
+          typeof pluginConfig.interval === "number" &&
+          pluginConfig.interval > 0
+        ) {
+          this.logIntervalMinutes = pluginConfig.interval;
+          logger.verbose(`[${this.name}] Set log interval to ${this.logIntervalMinutes} minutes from config.`);
+        } else {
+          logger.verbose(`[${this.name}] Using default log interval of ${this.logIntervalMinutes} minutes.`);
+        }
       }
 
       await this.setupSchema();
@@ -46,9 +119,9 @@ class DBLog {
       await this.migrateToUTF8MB4();
       this.startLogging();
 
-      // We also want to listen for playerJoined and playerLeft events
-      this.serverInstance.removeListener("playerJoined", this.handlePlayerJoined);
-      this.serverInstance.on("playerJoined", this.handlePlayerJoined.bind(this));
+      // We also want to listen for playerUpdate events
+      this.serverInstance.removeListener("playerUpdate", this.handlePlayerUpdate);
+      this.serverInstance.on("playerUpdate", this.handlePlayerUpdate.bind(this));
 
       this.isInitialized = true;
       logger.info(`[${this.name}] Initialized: Listening to playerJoined events and logging players every ${this.logIntervalMinutes} minutes.`);
@@ -159,250 +232,152 @@ class DBLog {
 
   startLogging() {
     const intervalMs = this.logIntervalMinutes * 60 * 1000;
-    this.logPlayers();
-    this.interval = setInterval(() => this.logPlayers(), intervalMs);
+    this.interval = setInterval(() => this.logPlayersOnInterval(), intervalMs);
+    
+    // Also periodically flush the queue even if not full
+    // this.queueFlushInterval = setInterval(() => this.flushPlayerUpdateQueue(), 30000); // Every 30 seconds
+  }
+  
+  async flushPlayerUpdateQueue() {
+    try {
+      if (!this.isInitialized) return;
+      
+      const isEmpty = await this.playerUpdateEventQueue.isEmpty();
+      if (isEmpty) return;
+      
+      // logger.verbose(`[${this.name}] Flushing player update queue.`);
+      const players = await this.playerUpdateEventQueue.dequeueAll();
+      await this.batchProcessPlayers(players);
+    } catch (error) {
+      logger.error(`[${this.name}] Error flushing player update queue: ${error.message}`);
+    }
   }
 
-  async logPlayers() {
+  async logPlayersOnInterval() {
     const players = this.serverInstance.players;
     try {
       await this.batchProcessPlayers(players);
-      logger.info(`[${this.name}] Processed ${players.length} players.`);
+      logger.info(`[${this.name}] Processed ${players.length} players in logPlayersOnInterval.`);
     } catch (error) {
       logger.error(`[${this.name}] Error processing players: ${error.message}`);
     }
   }
 
-  // Create a new method which batches all updates to the database for all players instead of doing it one by one
-  async batchProcessPlayers(players) {
-    if (!Array.isArray(players) || players.length === 0) {
+  async handlePlayerUpdate(data) {
+    if (!this.isInitialized || !data || !data.uid) {
       return;
     }
-    
-    const playerUpdates = []; 
-    const playerInserts = [];
-    const playerUids = new Set();
-    for (const player of players) {
-      if (!player.uid) {
-        continue;
-      }
 
-      if (this.playerCache.has(player.uid)) {
-        const cachedPlayer = this.playerCache.get(player.uid);
-        if (
-          cachedPlayer.name === player.name &&
-          cachedPlayer.ip === player.ip &&
-          cachedPlayer.beGUID === player.beGUID &&
-          cachedPlayer.steamID === player.steamID &&
-          cachedPlayer.device === player.device
-        ) {
-          continue; // No changes, skip processing
-        }
-      }
-
-      playerUids.add(player.uid);
-
-      const updateFields = {};
-      if (player.name) updateFields.playerName = player.name;
-      if (player.ip) updateFields.playerIP = player.ip;
-      if (player.beGUID) updateFields.beGUID = player.beGUID;
-      if (player.steamID !== undefined) updateFields.steamID = player.steamID;
-      if (player.device !== undefined) updateFields.device = player.device;
-
-      if (Object.keys(updateFields).length > 0) {
-        const setClause = Object.keys(updateFields)
-          .map((field) => `${field} = ?`)
-          .join(", ");
-        const values = Object.values(updateFields);
-        values.push(player.uid);
-        playerUpdates.push({ setClause, values });
-      } else {
-        // If no fields to update, prepare for insert
-        playerInserts.push({
-          name: player.name || null,
-          ip: player.ip || null,
-          uid: player.uid,
-          beGUID: player.beGUID || null,
-          steamID: player.steamID !== undefined ? player.steamID : null,
-          device: player.device || null,
-        });
-      }
-    }
-    if (playerUpdates.length === 0 && playerInserts.length === 0) {
-      return; // No updates or inserts to process
-    }
-    const connection = await process.mysqlPool.getConnection();
     try {
-      // Process updates
-      for (const update of playerUpdates) {
-        const updateQuery = `UPDATE players SET ${update.setClause} WHERE playerUID = ?`;
-        await connection.query(updateQuery, update.values);
+      // Add to the async-safe queue
+      const isFull = await this.playerUpdateEventQueue.enqueue(data);
+      
+      if (isFull) {
+        // If queue is full, process all items
+        logger.info(`[${this.name}] Player update event queue reached max size. Processing batch.`);
+        const players = await this.playerUpdateEventQueue.dequeueAll();
+        await this.batchProcessPlayers(players);
       }
-
-      // Process inserts
-      if (playerInserts.length > 0) {
-        const insertQuery = `
-          INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen)
-          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `;
-        for (const player of playerInserts) {
-          await connection.query(insertQuery, [
-            player.name,
-            player.ip,
-            player.uid,
-            player.beGUID,
-            player.steamID,
-            player.device,
-          ]);
-        }
-      }
-
-      // Update cache
-      for (const uid of playerUids) {
-        this.playerCache.set(uid, {
-          name: players.find(p => p.uid === uid).name,
-          ip: players.find(p => p.uid === uid).ip,
-          beGUID: players.find(p => p.uid === uid).beGUID,
-          steamID: players.find(p => p.uid === uid).steamID,
-          device: players.find(p => p.uid === uid).device,
-        });
-      }
-
-      // Set TTL for cache entries
-      setTimeout(() => {
-        for (const uid of playerUids) {
-          this.playerCache.delete(uid);
-        }
-      }, this.cacheTTL);
     } catch (error) {
-      logger.error(`Error processing batch of players: ${error.message}`);
+      logger.error(`[${this.name}] Error handling player update: ${error.message}`);
+    }
+  }
+
+  // Make a new method which does batch processing of players
+  async batchProcessPlayers(players) {
+    // Prepare the batch insert query with multiple value sets
+    const baseSql = `
+      INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen)
+      VALUES 
+    `;
+    
+    const connection = await process.mysqlPool.getConnection();
+    // start a transaction
+    try {
+      const validPlayers = players.filter(player => player && player.uid);
+      if (validPlayers.length === 0) {
+        return;
+      }
+      
+      await connection.beginTransaction();
+      
+      // Prepare values and parameters for the batch query
+      const valuePlaceholders = [];
+      const params = [];
+      
+      for (const player of validPlayers) {
+        const timestamp = player.time ? new Date(player.time) : new Date();
+        
+        // Add one set of value placeholders for each player
+        valuePlaceholders.push('(?, ?, ?, ?, ?, ?, ?)');
+        
+        // Add all parameters for this player
+        params.push(
+          player.name || null,
+          player.ip || null,
+          player.uid,
+          player.beGUID || null,
+          player.steamID !== undefined ? player.steamID : null,
+          player.device || null,
+          timestamp
+        );
+      }
+      
+      // Combine the base SQL with the placeholders and ON DUPLICATE KEY UPDATE clause
+      // But also prevent empty values for beGUID and steamID when we have an existing value
+      // Also, only update lastSeen if the new timestamp is greater than or equal to the existing one
+      const fullSql = `
+        ${baseSql} ${valuePlaceholders.join(', ')}
+        ON DUPLICATE KEY UPDATE
+          playerName = VALUES(playerName),
+          playerIP = COALESCE(NULLIF(VALUES(playerIP), ''), playerIP),
+          beGUID = COALESCE(NULLIF(VALUES(beGUID), ''), beGUID),
+          steamID = COALESCE(NULLIF(VALUES(steamID), ''), steamID),
+          device = COALESCE(NULLIF(VALUES(device), ''), device),
+          lastSeen = IF(VALUES(lastSeen) >= lastSeen OR lastSeen IS NULL, VALUES(lastSeen), lastSeen)
+      `;
+      
+      // Execute the batch query
+      await connection.query(fullSql, params);
+      await connection.commit();
+      
+      logger.info(`[${this.name}] Batch processed ${validPlayers.length} players.`);
+    } catch (error) {
+      logger.error(`Error batch processing players: ${error.message}`);
+      // Rollback the transaction if there was an error
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        logger.error(`Error rolling back transaction: ${rollbackError.message}`);
+      }
     } finally {
       connection.release();
     }
   }
-
-  // async processPlayer(player) {
-  //   if (!player.uid) {
-  //     return;
-  //   }
-
-  //   try {
-  //     if (player.device === 'Console' && player.steamID) {
-  //       logger.warn(`Unexpected: Console player ${player.name} has a steamID: ${player.steamID}. This shouldn't happen.`);
-  //     }
-
-  //     if (this.playerCache.has(player.uid)) {
-  //       const cachedPlayer = this.playerCache.get(player.uid);
-
-  //       if (
-  //         cachedPlayer.name === player.name &&
-  //         cachedPlayer.ip === player.ip &&
-  //         cachedPlayer.beGUID === player.beGUID &&
-  //         cachedPlayer.steamID === player.steamID &&
-  //         cachedPlayer.device === player.device
-  //       ) {
-  //         return;
-  //       }
-  //     }
-
-  //     const [rows] = await process.mysqlPool.query(
-  //       "SELECT * FROM players WHERE playerUID = ?",
-  //       [player.uid]
-  //     );
-
-  //     if (rows.length > 0) {
-  //       const dbPlayer = rows[0];
-  //       let needsUpdate = false;
-  //       const updateFields = {};
-
-  //       if (dbPlayer.playerName !== player.name) {
-  //         updateFields.playerName = player.name || null;
-  //         needsUpdate = true;
-  //       }
-  //       if (player.ip && dbPlayer.playerIP !== player.ip) {
-  //         updateFields.playerIP = player.ip;
-  //         needsUpdate = true;
-  //       }
-  //       if (player.beGUID && dbPlayer.beGUID !== player.beGUID) {
-  //         updateFields.beGUID = player.beGUID;
-  //         needsUpdate = true;
-  //       }
-  //       if (player.steamID !== undefined && dbPlayer.steamID !== player.steamID) {
-  //         updateFields.steamID = player.steamID;
-  //         needsUpdate = true;
-  //       }
-  //       if (player.device !== undefined && dbPlayer.device !== player.device) {
-  //         updateFields.device = player.device;
-  //         needsUpdate = true;
-  //       }
-
-  //       if (needsUpdate) {
-
-  //         const setClause = Object.keys(updateFields)
-  //           .map((field) => `${field} = ?`)
-  //           .join(", ");
-  //         const values = Object.values(updateFields);
-  //         values.push(player.uid);
-
-  //         const updateQuery = `UPDATE players SET ${setClause} WHERE playerUID = ?`;
-  //         await process.mysqlPool.query(updateQuery, values);
-  //       }
-  //     } else {
-  //       const insertQuery = `
-  //         INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen)
-  //         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-  //       `;
-  //       await process.mysqlPool.query(insertQuery, [
-  //         player.name || null,
-  //         player.ip || null,
-  //         player.uid,
-  //         player.beGUID || null,
-  //         player.steamID !== undefined ? player.steamID : null,
-  //         player.device || null,
-  //       ]);
-  //     }
-
-  //     this.playerCache.set(player.uid, {
-  //       name: player.name,
-  //       ip: player.ip,
-  //       beGUID: player.beGUID,
-  //       steamID: player.steamID,
-  //       device: player.device,
-  //     });
-
-  //     setTimeout(() => {
-  //       this.playerCache.delete(player.uid);
-  //     }, this.cacheTTL);
-  //   } catch (error) {
-  //     logger.error(`Error processing player ${player.name}: ${error.message}`);
-  //   }
-  // }
-
-  // async handlePlayerJoined(player) {
-  //   const eventTime = player?.time ? parseLogDate(player.time) : null;
-  //   // If it's more than 5 seconds old, ignore it
-  //   if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
-  //     return;
-  //   }
-
-  //   if (!player.beGUID) {
-  //     logger.warn(`[${this.name}] Player joined without a BE GUID: ${player.name}`);
-  //     return;
-  //   }
-
-  //   // Set the lastSeen timestamp to the current timestamp
-  //   const updateQuery = `UPDATE players SET lastSeen = CURRENT_TIMESTAMP WHERE beGUID = ?`;
-  //   const connection = await process.mysqlPool.getConnection();
-  //   await connection.query(updateQuery, [player.beGUID]);
-  //   connection.release();
-  // }
-
 
   async cleanup() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
+    
+    if (this.queueFlushInterval) {
+      clearInterval(this.queueFlushInterval);
+      this.queueFlushInterval = null;
+    }
+    
+    // Flush any remaining items in the queue before cleanup
+    try {
+      const isEmpty = await this.playerUpdateEventQueue.isEmpty();
+      if (!isEmpty) {
+        logger.info(`[${this.name}] Flushing remaining items in queue during cleanup.`);
+        const players = await this.playerUpdateEventQueue.dequeueAll();
+        await this.batchProcessPlayers(players);
+      }
+    } catch (error) {
+      logger.error(`[${this.name}] Error flushing queue during cleanup: ${error.message}`);
+    }
+    
     this.playerCache.clear();
   }
 }

@@ -44,4 +44,15 @@ module.exports = {
                 .setName('wipe')
                 .setDescription('Wipe all league stats')
         )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('debuginfo')
+                .setDescription('Get debug information about the current league')
+                .addStringOption(option =>
+                    option
+                        .setName('identifier')
+                        .setDescription('An optional identifier of a player to look up (Reforger UUID or Name)')
+                        .setRequired(false)
+                )
+        ),
 }

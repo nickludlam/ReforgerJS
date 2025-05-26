@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require("discord.js");
 const logger = require("../logger/logger");
-const { escapeMarkdown, parseLogDate } = require('../../helpers');
+const { escapeMarkdown } = require('../../helpers');
 
 class AltChecker {
   constructor(config) {
@@ -85,26 +85,38 @@ class AltChecker {
 
 
   async handlePlayerJoined(player) {
-    const eventTime = player?.time ? parseLogDate(player.time) : null;
-    // If it's more than 5 seconds old, ignore it
-    if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
-      return;
-    }
-
-    const { playerIP, playerName, beGUID } = player;
-
-    if (!playerIP) {
-      logger.warn(`[${this.name}] Player joined without an IP address: ${playerName}`);
-      return;
-    }
-
-    // Early out by checking if the player is in the whitelist
-    if (this.whitelistBEGUIDs.size > 0 && this.whitelistBEGUIDs.has(beGUID.toLowerCase())) {
-      logger.verbose(`[${this.name}] Player ${playerName} is in the whitelist. Skipping alt check.`);
+    try {
+      // If the timestamp is invalid or more than 5 seconds old, ignore it
+      if (player.time && (Date.now() - player.time.getTime() > 5000)) {
+        return;
+      }
+    } catch (error) {
+      logger.error(`[${this.name}] Error checking player time for '${player?.name}': ${error.stack}`);
+      // Also dump the player object for debugging
+      logger.verbose(`[${this.name}] Player object: ${JSON.stringify(player, null, 2)}`);
+      // Log if player.time is a valid Date object
+      if (player.time && !(player.time instanceof Date)) {
+        logger.warn(`[${this.name}] player.time is not a valid Date object: ${player.time}`);
+        logger.warn(`[${this.name}] player.time type: ${typeof player.time}`);
+      }
+      // 
       return;
     }
 
     try {
+      const { playerIP, playerName, beGUID } = player;
+
+      if (!playerIP) {
+        logger.warn(`[${this.name}] Player joined without an IP address: ${playerName}`);
+        return;
+      }
+
+      // Early out by checking if the player is in the whitelist
+      if (this.whitelistBEGUIDs.size > 0 && this.whitelistBEGUIDs.has(beGUID.toLowerCase())) {
+        logger.verbose(`[${this.name}] Player ${playerName} is in the whitelist. Skipping alt check.`);
+        return;
+      }
+
       // Check cache first
       if (this.playerIPCache.has(playerIP)) {
         logger.verbose(`[${this.name}] Cache hit for IP: ${playerIP}`);
@@ -192,7 +204,7 @@ class AltChecker {
         }
       }
     } catch (error) {
-      logger.error(`[${this.name}] Error handling playerJoined for '${playerName}': ${error.stack}`);
+      logger.error(`[${this.name}] Error handling playerJoined for '${player?.name}': ${error.stack}`);
     }
   }
 }

@@ -1,9 +1,10 @@
+const { parseLogDate } = require('../../../helpers');
 const { EventEmitter } = require('events');
 
 class VoteKickStartHandler extends EventEmitter {
     constructor() {
         super();
-        this.regex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}).*?VOTING SYSTEM - Player '(.*?) \(with player id = (\d+)\) started a vote to kick player '(.*?)' \(with player id = (\d+)\)/;
+        this.regex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}).*?VOTING SYSTEM - Player '(.*?)' \(with player id = (\d+)\) started a vote to kick player '(.*?)' \(with player id = (\d+)\)/;
     }
     test(line) {
         return this.regex.test(line);
@@ -11,7 +12,7 @@ class VoteKickStartHandler extends EventEmitter {
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {
-            const time = match[1];
+            const time = parseLogDate(match[1]);
             const voteOffenderName = match[2];
             const voteOffenderId = match[3];
             const voteVictimName = match[4];

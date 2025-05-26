@@ -1,4 +1,4 @@
-// log-parser/regexHandlers/gameStart.js
+const { parseLogDate } = require('../../../helpers');
 const { EventEmitter } = require('events');
 
 class GameStartHandler extends EventEmitter {
@@ -14,7 +14,7 @@ class GameStartHandler extends EventEmitter {
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {
-            const time = match[1];
+            const time = parseLogDate(match[1]);
             this.emit('gameStart', { time });
         }
     }

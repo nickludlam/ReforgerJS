@@ -71,17 +71,19 @@ class ServerStatus {
       const embedConfig = pluginConfig.embed || {};
       const serverName = this.config.server?.name || "Unknown";
 
+      const fields = [
+        { name: "Player Count", value: "Loading...", inline: true },
+        { name: "FPS", value: "Loading...", inline: true },
+        { name: "Memory Usage", value: "Loading...", inline: true }
+      ]
+
       const embed = new EmbedBuilder()
         .setTitle(embedConfig.title || "Server Status")
         .setColor(embedConfig.color || "#00FF00")
         .setDescription(serverName)
         .setTimestamp()
-        .addFields(
-          { name: "Player Count", value: "Loading...", inline: true },
-          { name: "FPS", value: "Loading...", inline: true },
-          { name: "Memory Usage", value: "Loading...", inline: true }
-        );
-
+        .addFields(fields);
+        
       if (embedConfig.footer) embed.setFooter({ text: embedConfig.footer });
       
       // Only set thumbnail if thumbnail is not explicitly set to false and a URL is provided
@@ -134,6 +136,16 @@ class ServerStatus {
         { name: "FPS", value: `${fps}`, inline: true },
         { name: "Memory Usage", value: `${memoryUsageMB} MB`, inline: true },
       ]
+
+      if (global.serverLastGameStartTime) {
+        // Format the elapsed time since the last game start
+        const elapsedTime = Date.now() - global.serverLastGameStartTime;
+        const minutes = Math.floor((elapsedTime / (1000 * 60)) % 60);
+        const hours = Math.floor((elapsedTime / (1000 * 60 * 60)));
+        const formattedTime = `${hours}h ${minutes}m`;
+        fields.push({ name: "Current game duration", value: formattedTime, inline: true });
+      }
+
       if (haveServerDataUpdateTime) {
         fields.push({ name: "Stats last updated", value: `${secondsSinceLastUpdate} seconds ago`, inline: true });
       } else {

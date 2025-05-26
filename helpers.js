@@ -68,27 +68,23 @@ function parseLogDate(dateString) {
   return new Date(year, month - 1, day, hour, min, sec, ms);
 }
 
-// Function to get the user's maximum role level
-function getUserMaxRoleLevel(discordUserRoles, config) {
-  let maxLevel = 0;
-  for (const [levelKey, roleNameArray] of Object.entries(config.roleLevels)) {
-    const numericLevel = parseInt(levelKey, 10);
-    if (isNaN(numericLevel)) continue;
-
-    for (const roleName of roleNameArray) {
-      const discordRoleID = config.roles[roleName];
-      if (discordRoleID && discordUserRoles.includes(discordRoleID)) {
-        if (numericLevel > maxLevel) {
-          maxLevel = numericLevel;
-        }
-      }
-    }
+function isOlderThan(date, milliseconds) {
+  if (!date) return false;
+  
+  try {
+    const timestamp = date instanceof Date ? date.getTime() : new Date(date).getTime();
+    if (isNaN(timestamp)) return false;
+    
+    return (Date.now() - timestamp) > milliseconds;
+  } catch (error) {
+    logger.error(`Error checking if date is older than ${milliseconds}ms: ${error.message}`);
+    return false;
   }
-  return maxLevel;
 }
 
 module.exports = {
   escapeMarkdown,
   classifyUserQueryInfo,
-  parseLogDate
+  parseLogDate,
+  isOlderThan
 };

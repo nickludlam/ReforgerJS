@@ -1,7 +1,6 @@
 // index.js
 const fs = require('fs');
 const path = require('path');
-const express = require('express');
 const { printLogo } = require('./reforger-server/utils/logo');
 const { validateConfig, performStartupChecks } = require('./reforger-server/factory');
 const { loadPlugins, mountPlugins } = require('./reforger-server/pluginLoader');
@@ -72,7 +71,7 @@ async function main() {
         discordClient.on('interactionCreate', async (interaction) => {
             try {
                 if (interaction.isCommand()) {
-                    const commandName = interaction.commandName;
+                    // const commandName = interaction.commandName;
                     const extraData = {};
                     
                     if (interaction.options && interaction.options._hoistedOptions) {

@@ -34,8 +34,8 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             return;
         }
 
-        if (!reason || reason.length < 5) {
-            await interaction.editReply(`Reason is too short. Please provide at least 5 characters.`);
+        if (!reason || reason.length < 3) {
+            await interaction.editReply(`Reason is too short. Please provide at least 3 characters.`);
             return;
         }
 

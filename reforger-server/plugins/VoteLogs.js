@@ -1,5 +1,3 @@
-const { parseLogDate } = require("../../helpers");
-
 class VoteLogs {
   constructor(config) {
     this.config = config;
@@ -168,9 +166,8 @@ class VoteLogs {
     }
 
     try {
-      const eventTime = data?.time ? parseLogDate(data.time) : null;
       // If it's more than 5 seconds old, ignore it
-      if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
+      if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 5000) {
         return;
       }
 
@@ -178,6 +175,7 @@ class VoteLogs {
       const offenderId = data.voteOffenderId || null;
       const victimName = data.voteVictimName || null;
       const victimId = data.voteVictimId || null;
+      const eventTime = data.time || new Date();
       
       const offenderUID = this.findPlayerUID(offenderName, offenderId);
       const victimUID = this.findPlayerUID(victimName, victimId);

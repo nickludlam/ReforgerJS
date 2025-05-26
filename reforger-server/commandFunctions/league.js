@@ -80,24 +80,27 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 totalPlayerCount = results.requestedPlayer.totalPlayerCount;
             }
 
+
+            // Account for the offset if we have a requested player
+
+            let offset = 0;
+            if (results.requestedPlayer) {
+              // Check if the requestedPlayer is present in the results
+              const requestedPlayer = results.players.find(player => player.playerUID === results.requestedPlayer.uid);
+              if (requestedPlayer) {
+                // Get the index of the requestedPlayer in the players list
+                const requestedPlayerIndex = results.players.indexOf(requestedPlayer);
+                // Calculate the offset.  e.g. if the index is 3, and requestedPlayer.position is 43, we need to add 40 to the index
+                offset = results.requestedPlayer.position - requestedPlayerIndex - 1; // An additional -1 because the index is 0-based
+                requestedPlayerInResults = true;
+                requestedPlayerName = results.players[requestedPlayerIndex].playerName;
+              }
+            }
+
+
             // Build a compact leaderboard string
             const leaderboard = results.players.map((player, index) => {
                 // Calculate the offset when we have a playerUID
-                let offset = 0;
-                if (results.requestedPlayer) {
-                  // Check if the requestedPlayer is present in the results
-                  const requestedPlayer = results.players.find(player => player.playerUID === results.requestedPlayer.uid);
-                  if (requestedPlayer) {
-                    // Get the index of the requestedPlayer in the players list
-                    const requestedPlayerIndex = results.players.indexOf(requestedPlayer);
-                    // Calculate the offset.  e.g. if the index is 3, and requestedPlayer.position is 43, we need to add 40 to the index
-                    offset = results.requestedPlayer.position - requestedPlayerIndex - 1; // An additional -1 because the index is 0-based
-                    requestedPlayerInResults = true;
-                    requestedPlayerName = results.players[requestedPlayerIndex].playerName;
-                    logger.verbose(`Offset for requested player ${requestedPlayerName} is ${offset}`);
-                  }
-                }
-
                 let medal = '';
                 let position = index + 1 + offset; // We are 1-based, even with the offset
                 if (position === 1) medal = `#${position} 🥇`;
@@ -177,6 +180,116 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             // call wipeLeagueStats
             await pluginInstance.wipeAllLeagueStats();
             await interaction.editReply('League stats wiped.');        
+        } else if (subcommand === 'debuginfo') {
+            // check for an identifier
+            const identifier = interaction.options.getString('identifier', false);
+            // get the shape / type of the identifier
+            let playerUID = null;
+            if (identifier) {
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+                if (!isUUID) {
+                    const playerUIDResult = await pluginInstance.getPlayerUIDByName(identifier);
+                    if (!playerUIDResult) {
+                        await interaction.editReply(`Cannot find single match with name: ${identifier}`);
+                        return;
+                    }
+                    playerUID = playerUIDResult;
+                } else {
+                    playerUID = identifier;
+                }
+            }
+            
+            const leagueInfo = await pluginInstance.getCurrentLeagueInfo(playerUID);
+            if (!leagueInfo) {
+                await interaction.editReply('Could not get info for current league.');
+                return;
+            }
+
+            // dump the league info to the console
+            logger.verbose(`[League Command] League Info: ${JSON.stringify(leagueInfo, null, 2)}`);
+
+            const formattedStartDate = new Date(leagueInfo.startDate).toLocaleDateString('en-GB', {
+                weekday: 'short',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            });
+
+            let description = `**Start Date:** ${formattedStartDate}\n`;
+            if (leagueInfo.playerStats.length === 1) {
+                description += `\n\n**Player UID:** ${leagueInfo.playerStats[0].playerUID}`;
+                description += `\n**Player Name:** ${leagueInfo.playerStats[0].playerName}`;
+                // Now print out the stats, and use 3 numbers per line, showing current - base = diff
+                description += `\n**Stats:**\n`;
+                
+
+                // "playerStats": [
+                //   {
+                //     "playerName": "pihvi",
+                //     "playerUID": "2336d82b-6288-4b94-95bd-c71b6ebee597",
+                //     "baseStats": {
+                //       "kills": 1284,
+                //       "ai_kills": 573,
+                //       "deaths": 466,
+                //       "distance_walked": 249345,
+                //       "distance_driven": 8780240,
+                //       "bandage_friendlies": 11,
+                //       "tourniquet_friendlies": 0,
+                //       "saline_friendlies": 0,
+                //       "morphine_friendlies": 6
+                //     },
+                //     "currentStats": {
+                //       "kills": 1285,
+                //       "ai_kills": 574,
+                //       "deaths": 472,
+                //       "distance_walked": 253923,
+                //       "distance_driven": 8835660,
+                //       "bandage_friendlies": 11,
+                //       "tourniquet_friendlies": 0,
+                //       "saline_friendlies": 1,
+                //       "morphine_friendlies": 8
+                //     },
+                //     "diffStats": {
+                //       "kills": 1,
+                //       "ai_kills": 1,
+                //       "deaths": 6,
+                //       "distance_walked": 4578,
+                //       "distance_driven": 55420,
+                //       "bandage_friendlies": 0,
+                //       "tourniquet_friendlies": 0,
+                //       "saline_friendlies": 1,
+                //       "morphine_friendlies": 2
+                //     }
+                //   }
+                // ]
+
+                // Playerstats is stored in the above format. I want to go through each line and display the stats in a readable format.
+                // So we have ${stat.current} - ${stat.base} = ${stat.diff}
+                const statKeys = Object.keys(leagueInfo.playerStats[0].baseStats);
+                description += statKeys
+                    .map(stat => {
+                        const current = leagueInfo.playerStats[0].currentStats[stat] || 0;
+                        const base = leagueInfo.playerStats[0].baseStats[stat] || 0;
+                        const diff = leagueInfo.playerStats[0].diffStats[stat] || 0;
+                        return `**${stat}**: ${current} - ${base} = ${diff}`;
+                    })
+                    .join('\n');
+
+            } else {
+                description += `\n\n**Total entrants currently playing:** ${leagueInfo.playerStats.length}`;
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle(`🏆 League No.${leagueInfo.leagueNumber} Info 🏆`)
+                .setDescription(description)
+                .setColor(0x0099FF)
+                .setFooter({ text: `League data is still experimental` });
+
+            await interaction.editReply({ embeds: [embed] });
+        }
+        else {
+            await interaction.editReply(`Unknown subcommand: ${subcommand}`);
+            return;
         }
     }
     catch (error) {

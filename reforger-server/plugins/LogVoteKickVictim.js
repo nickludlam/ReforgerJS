@@ -1,5 +1,4 @@
 const { EmbedBuilder } = require("discord.js");
-const { parseLogDate } = require("../../helpers");
 
 class LogVoteKickVictim {
   constructor(config) {
@@ -63,13 +62,14 @@ class LogVoteKickVictim {
       }
 
       this.serverInstance.on("voteKickVictim", this.handleVoteKickVictim.bind(this));
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error initializing LogVoteKickVictim plugin: ${error.message}`);
+    }
   }
 
   async handleVoteKickVictim(data) {
-    const eventTime = data?.time ? parseLogDate(data.time) : null;
     // If it's more than 5 seconds old, ignore it
-    if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
+    if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 5000) {
       return;
     }
 
@@ -91,7 +91,9 @@ class LogVoteKickVictim {
 
     try {
       await this.channelOrThread.send({ embeds: [embed] });
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error sending vote kick victim message: ${error.message}`);
+    }
   }
 
   async cleanup() {

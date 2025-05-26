@@ -1,5 +1,4 @@
 const { EmbedBuilder } = require("discord.js");
-const { parseLogDate } = require("../../helpers");
 
 class LogVoteKickStart {
   constructor(config) {
@@ -63,13 +62,14 @@ class LogVoteKickStart {
       }
 
       this.serverInstance.on("voteKickStart", this.handleVoteKickStart.bind(this));
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error initializing LogVoteKickStart plugin: ${error.message}`);
+    }
   }
 
   async handleVoteKickStart(data) {
-    const eventTime = data?.time ? parseLogDate(data.time) : null;
     // If it's more than 5 seconds old, ignore it
-    if (eventTime && isNaN(eventTime.getTime()) || Date.now() - eventTime.getTime() > 5000) {
+    if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 5000) {
       return;
     }
 
@@ -95,7 +95,9 @@ class LogVoteKickStart {
 
     try {
       await this.channelOrThread.send({ embeds: [embed] });
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error sending vote kick start message: ${error.message}`);
+    }
   }
 
   async cleanup() {

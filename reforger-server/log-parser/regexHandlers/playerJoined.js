@@ -1,3 +1,4 @@
+const { parseLogDate } = require('../../../helpers');
 const { EventEmitter } = require('events');
 
 class PlayerJoinedHandler extends EventEmitter {
@@ -26,7 +27,7 @@ class PlayerJoinedHandler extends EventEmitter {
     processLine(line) {
         const matchLineAddingPlayer = this.lineAddingPlayerRegex.exec(line);
         if (matchLineAddingPlayer) {
-            const time = matchLineAddingPlayer[1];
+            const time = parseLogDate(matchLineAddingPlayer[1]);
             const identity = matchLineAddingPlayer[2];
             const playerName = matchLineAddingPlayer[3];
 
@@ -45,7 +46,7 @@ class PlayerJoinedHandler extends EventEmitter {
 
         const matchPlayerConnected = this.playerConnectedRegex.exec(line);
         if (matchPlayerConnected) {
-            const time = matchPlayerConnected[1];
+            const time = parseLogDate(matchPlayerConnected[1]);
             const playerNumber = matchPlayerConnected[2];
             const playerName = matchPlayerConnected[3];
             const playerIP = matchPlayerConnected[4].trim();
@@ -87,7 +88,7 @@ class PlayerJoinedHandler extends EventEmitter {
 
             const playerData = this.pendingPlayersByIdentity.get(identity);
             if (playerData) {
-                if (guidValue === '[u8; 64]') {
+                if (guidValue.startsWith('[')) {
                     playerData.steamID = null;
                     playerData.device = 'Console';
                 } else {

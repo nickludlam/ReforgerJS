@@ -61,7 +61,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
             if (rows.length > 1) {
                 const displayCount = Math.min(rows.length, maxResults);
-                let responseMessage = `Found ${rows.length} players matching "${identifier}". `;
+                let responseMessage = `Found ${rows.length} players matching "${identifier}".\n\n`;
                 
                 if (rows.length > maxResults) {
                     responseMessage += `Showing first ${maxResults} results. Please refine your search for more specific results.\n\n`;
