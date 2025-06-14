@@ -4,20 +4,20 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('rcon')
         .setDescription('Manage server via RCON')
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName('restart')
-                .setDescription('Restart the server')
-                .addStringOption(option =>
-                    option.setName('confirm')
-                        .setDescription('Type CONFIRM to proceed')
-                        .setRequired(true)
-                )
-        )
+        // .addSubcommand(subcommand =>
+        //     subcommand
+        //         .setName('restart')
+        //         .setDescription('Restart the server')
+        //         .addStringOption(option =>
+        //             option.setName('confirm')
+        //                 .setDescription('Type CONFIRM to proceed')
+        //                 .setRequired(true)
+        //         )
+        // )
         .addSubcommand(subcommand =>
             subcommand
                 .setName('shutdown')
-                .setDescription('Shutdown the server')
+                .setDescription('Performs a full shutdown/restart of the server')
                 .addStringOption(option =>
                     option.setName('confirm')
                         .setDescription('Type CONFIRM to proceed')
