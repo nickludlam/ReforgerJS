@@ -1,5 +1,4 @@
 const { EmbedBuilder } = require('discord.js');
-const mysql = require('mysql2/promise');
 const { escapeMarkdown } = require('../../helpers');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
@@ -90,7 +89,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             .setTitle("🗳️ Player Vote Information")
             .setDescription(`**Player:** ${escapeMarkdown(playerName)}\n**UUID:** ${uuid}\n---------------\n`)
             .setColor("#FFA500")
-            .setFooter({ text: "Reforger Vote Info" });
+            .setFooter({ text: "EXD ReforgerJS customised by Bewilderbeest" });
 
         embed.addFields(
             {

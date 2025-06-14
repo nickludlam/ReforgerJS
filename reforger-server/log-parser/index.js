@@ -66,6 +66,7 @@ class LogParser extends EventEmitter {
       const GameStartHandler = require('./regexHandlers/gameStart');
       const GameEndHandler = require('./regexHandlers/gameEnd');
       const GameCrashedHandler = require('./regexHandlers/gameCrashed');
+      const ServerStartHandler = require('./regexHandlers/serverStart');
 
       this.voteKickStartHandler = new VoteKickStartHandler();
       this.voteKickVictimHandler = new VoteKickVictimHandler();
@@ -76,6 +77,7 @@ class LogParser extends EventEmitter {
       this.gameStartHandler = new GameStartHandler();
       this.gameEndHandler = new GameEndHandler();
       this.gameCrashedHandler = new GameCrashedHandler();
+      this.serverStartHandler = new ServerStartHandler();
 
 
       this.removeAllListeners();
@@ -90,6 +92,7 @@ class LogParser extends EventEmitter {
       this.gameStartHandler.on('gameStart', data => this.emit('gameStart', data));
       this.gameEndHandler.on('gameEnd', data => this.emit('gameEnd', data));
       this.gameCrashedHandler.on('gameCrashed', data => this.emit('gameCrashed', data));
+      this.serverStartHandler.on('serverStart', data => this.emit('serverStart', data));
     } catch (error) {
       logger.error(`Error setting up regex handlers: ${error.message}`);
     }
@@ -137,6 +140,12 @@ class LogParser extends EventEmitter {
     }
     if (this.gameEndHandler && this.gameEndHandler.test(line)) {
       this.gameEndHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+
+    if (this.serverStartHandler && this.serverStartHandler.test(line)) {
+      this.serverStartHandler.processLine(line);
       this.matchingLinesPerMinute++;
       return;
     }

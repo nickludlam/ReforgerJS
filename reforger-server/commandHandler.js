@@ -29,6 +29,7 @@ class CommandHandler {
         const commandLevel = commandConfig.commandLevel;
         let subCommandLevel = 0; // assume no subcommand
 
+
         // Get any optional subcommand - we need to check both the command and subcommand
         const subcommand = interaction.options.getSubcommand(false);
         if (subcommand) {
@@ -66,6 +67,14 @@ class CommandHandler {
                 return;
             }
         }
+
+        // Populate extraData with command level and user command level
+        const userHasCommandLevel = interaction.member.roles.cache.reduce((max, role) => {
+            const roleLevel = Object.keys(this.config.roleLevels).find(key => this.config.roleLevels[key].includes(role.id));
+            return roleLevel ? Math.max(max, parseInt(roleLevel, 10)) : max;
+        }, 0);
+        extraData.userHasCommandLevel = userHasCommandLevel;
+        extraData.commandLevel = commandLevel;
     
         try {
             extraData.commandConfig = commandConfig;

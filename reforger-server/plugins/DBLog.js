@@ -257,7 +257,6 @@ class DBLog {
     const players = this.serverInstance.players;
     try {
       await this.batchProcessPlayers(players);
-      logger.info(`[${this.name}] Processed ${players.length} players in logPlayersOnInterval.`);
     } catch (error) {
       logger.error(`[${this.name}] Error processing players: ${error.message}`);
     }

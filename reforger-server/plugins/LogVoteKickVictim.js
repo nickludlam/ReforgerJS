@@ -69,7 +69,7 @@ class LogVoteKickVictim {
 
   async handleVoteKickVictim(data) {
     // If it's more than 5 seconds old, ignore it
-    if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 5000) {
+    if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 60000) {
       return;
     }
 
@@ -86,7 +86,7 @@ class LogVoteKickVictim {
       )
       .setColor("#FFA500")
       .setFooter({
-        text: "VoteKickVictim plugin - ReforgerJS",
+        text: "EXD ReforgerJS customised by Bewilderbeest",
       });
 
     try {

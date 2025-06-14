@@ -1,9 +1,24 @@
 const { escapeMarkdown, classifyUserQueryInfo } = require('../../helpers');
+const geoIPLookup = require('../utils/geoIPLookup');
+
+// Initialize the GeoIP database reader
+const geoipInitialized = geoIPLookup.initialize();
+if (!geoipInitialized) {
+    logger.warn('[Whois Command] GeoIP database could not be initialized. Country information will not be available.');
+}
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
     try {
         if (!interaction.deferred && !interaction.replied) {
             await interaction.deferReply({ ephemeral: true });
+        }
+        
+        // Make sure the GeoIP database is initialized
+        if (!geoIPLookup.reader) {
+            const initResult = geoIPLookup.initialize();
+            if (!initResult) {
+                logger.warn('[Whois Command] GeoIP database could not be initialized during command execution. Country information will not be available.');
+            }
         }
 
         const user = interaction.user;
@@ -69,9 +84,22 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 
                 for (let i = 0; i < displayCount; i++) {
                     const player = rows[i];
+                    
+                    // Get country information if IP is available
+                    let countryInfo = '';
+                    if (player.playerIP) {
+                        const country = geoIPLookup.getCountryData(player.playerIP);
+                        // dump the country data to the console for debugging
+                        logger.debug(`[Whois Command] Country data for IP ${player.playerIP}: ${JSON.stringify(country)}`);
+                        if (country && country.name !== 'Unknown') {
+                            countryInfo = ` (${country.name})`;
+                        }
+                    }
+                    
                     let playerDetails = `${i+1}. **${escapeMarkdown(player.playerName) || 'Unknown'}**\n` +
                                         `   Reforger UUID: ${player.playerUID || 'Missing'}\n` +
                                         `   be GUID: ${player.beGUID || 'Missing'}\n` +
+                                        `   IP: ${player.playerIP || 'Missing'}${countryInfo}\n` +
                                         `   Device: ${player.device || 'Not Found'}\n`;
                     
                     responseMessage += playerDetails + '\n';
@@ -100,9 +128,21 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             rows.forEach((player) => {
                 let playerInfo = `Name: ${escapeMarkdown(player.playerName) || 'Missing Player Name'}` +
                                  `\nReforger ID: ${player.playerUID || 'Missing UUID'}`;
-                playerInfo +=  `\nbe GUID: ${player.beGUID || 'Missing beGUID'}` +
-                               `\nIP Address: ${player.playerIP || 'Missing IP Address'}` +
-                               `\nDevice: ${player.device || 'Not Found'}`;
+                playerInfo +=  `\nbe GUID: ${player.beGUID || 'Missing beGUID'}`;
+                
+                // Add IP address with country information
+                const ipAddress = player.playerIP || 'Missing IP Address';
+                let countryInfo = '';
+                
+                if (player.playerIP) {
+                    const country = geoIPLookup.getCountryData(player.playerIP);
+                    if (country && country.name !== 'Unknown') {
+                        countryInfo = ` (${country.name}${country.isoCode ? ` [${country.isoCode}]` : ''})`;
+                    }
+                }
+                
+                playerInfo += `\nIP Address: ${ipAddress}${countryInfo}` +
+                              `\nDevice: ${player.device || 'Not Found'}`;
                 
                 if (player.device === 'PC') {
                     playerInfo += `\nSteamID: ${player.steamID || 'Not Found'}`;

@@ -1,10 +1,19 @@
 const { EmbedBuilder } = require('discord.js');
 const { escapeMarkdown } = require('../../helpers');
 
+// Create a cache system so that one discord user can get stats on 3 unique players per 10 minutes
+const logger = require('../logger/logger');
+const cache = new Map(); // Cache to store player stats requests
+const MAX_REQUESTS = 3; // Maximum unique player stats requests per user
+const REQUEST_INTERVAL_LIMIT_MINS = 10; // Time limit in minutes for the request interval
+const REQUEST_INTERVAL_LIMIT = REQUEST_INTERVAL_LIMIT_MINS * 60 * 1000; // 10 minutes in milliseconds
+
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
     const identifier = extraData.identifier;
     const user = interaction.user;
     const requestedServer = extraData.server;
+    const commandLevel = extraData.commandLevel || 0;
+    const userHasCommandLevel = extraData.userHasCommandLevel || 0;
     console.log(`[Stats Command] User: ${user.username} (ID: ${user.id}) requested stats for identifier: ${identifier}`);
 
     if (!interaction.deferred && !interaction.replied) {
@@ -83,6 +92,39 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 playerUID = matchingPlayers[0].playerUID;
                 playerName = matchingPlayers[0].playerName;
             }
+        }
+
+        // Now we have playerUID and playerName
+
+        // Here we want to check if the extraData.userHasCommandLevel is the same as the commandLevel,
+        // in which case the stats requester is a basic user, and subject to rate limiting
+        //
+        // We want to store the playerUID and the date of the request in a cache as an array of objects, up to a maximum of X requests per Y minutes.
+      
+        if (commandLevel == userHasCommandLevel) {
+            logger.verbose(`[Stats Command] User ${user.username} (ID: ${user.id}) has basic command level, checking cache for rate limiting.`);
+            // check if the user has a cache entry for this identifier
+            const cacheKey = user.username;
+            if (cache.has(cacheKey)) {
+                const requests = cache.get(cacheKey);
+                // Filter out requests older than Y minutes
+                const now = Date.now();
+                const recentRequests = requests.filter(req => now - req.timestamp < REQUEST_INTERVAL_LIMIT);
+                // Only count requests for different playerUIDs
+                const uniquePlayerUIDs = new Set(recentRequests.map(req => req.playerUID));
+                if (!uniquePlayerUIDs.has(playerUID) && uniquePlayerUIDs.size >= MAX_REQUESTS) {
+                    await interaction.editReply(`You have reached the limit of ${MAX_REQUESTS} unique player stats requests in the last ${REQUEST_INTERVAL_LIMIT_MINS} minutes. Please try again later.`);
+                    return;
+                }
+                // Add the new request to the cache
+                recentRequests.push({ playerUID, timestamp: now });
+                cache.set(cacheKey, recentRequests);
+            } else {
+                // Create a new cache entry for this user
+                cache.set(cacheKey, [{ playerUID, timestamp: Date.now() }]);
+            }
+        } else {
+            logger.verbose(`[Stats Command] User ${user.username} (ID: ${user.id}) has higher command level, no rate limiting applied.`);
         }
 
         // This requires the command choices to line up with the server names in the database, as configured by DBLogStats.serverName

@@ -86,8 +86,8 @@ class AltChecker {
 
   async handlePlayerJoined(player) {
     try {
-      // If the timestamp is invalid or more than 5 seconds old, ignore it
-      if (player.time && (Date.now() - player.time.getTime() > 5000)) {
+      // If the timestamp is invalid or more than 1 minute old, ignore it
+      if (player.time && (Date.now() - player.time.getTime() > 60000)) {
         return;
       }
     } catch (error) {
@@ -186,7 +186,7 @@ class AltChecker {
 
       if (this.logAlts) {
         const embed = new EmbedBuilder()
-          .setTitle("Alt Accounts Detected")
+          .setTitle("Potential Alt Detected")
           .setDescription(`**Server:** ${this.config.server.name}\n**📡 IP Address:** ${playerIP}`)
           .setColor("#FFA500")
           .addFields(
@@ -194,7 +194,7 @@ class AltChecker {
             { name: "Reforger BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
             { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
           )
-          .setFooter({ text: "AltChecker Plugin - ReforgerJS" });
+          .setFooter({ text: "EXD ReforgerJS customised by Bewilderbeest" });
 
         try {
           await this.channelOrThread.send({ embeds: [embed] });

@@ -167,7 +167,7 @@ class VoteLogs {
 
     try {
       // If it's more than 5 seconds old, ignore it
-      if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 5000) {
+      if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 60000) {
         return;
       }
 

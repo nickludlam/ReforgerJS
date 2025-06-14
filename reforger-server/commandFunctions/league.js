@@ -217,7 +217,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
             let description = `**Start Date:** ${formattedStartDate}\n`;
             if (leagueInfo.playerStats.length === 1) {
-                description += `\n\n**Player UID:** ${leagueInfo.playerStats[0].playerUID}`;
+                description += `\n**Player UID:** ${leagueInfo.playerStats[0].playerUID}`;
                 description += `\n**Player Name:** ${leagueInfo.playerStats[0].playerName}`;
                 // Now print out the stats, and use 3 numbers per line, showing current - base = diff
                 description += `\n**Stats:**\n`;
@@ -283,7 +283,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 .setTitle(`🏆 League No.${leagueInfo.leagueNumber} Info 🏆`)
                 .setDescription(description)
                 .setColor(0x0099FF)
-                .setFooter({ text: `League data is still experimental` });
+                .setFooter({ text: `EXD ReforgerJS customised by Bewilderbeest` });
 
             await interaction.editReply({ embeds: [embed] });
         }

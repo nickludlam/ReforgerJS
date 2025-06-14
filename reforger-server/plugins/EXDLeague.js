@@ -1,4 +1,9 @@
 const logger = require("../logger/logger");
+const fs = require('fs');
+const path = require('path');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
 
 class EXDLeague {
   constructor(config) {
@@ -19,6 +24,9 @@ class EXDLeague {
     this.playerStatsTableName = "player_stats";
 
     this.leagueStatsCache = new Map();
+    this.jsonOutputIntervalMinutes = 5;
+    this.jsonOutputInterval = null;
+    this.jsonOutputDir = '';
   }
 
   async prepareToMount(serverInstance) {
@@ -35,6 +43,31 @@ class EXDLeague {
       );
       if (!pluginConfig) { return; }
       
+      this.jsonOutputDir = pluginConfig.jsonOutputDir || "";
+      if (!this.jsonOutputDir || this.jsonOutputDir === "") {
+        logger.error(`[${this.name}] EXDLeague plugin configuration is missing the jsonOutputDir field.`);
+        return;
+      }
+
+      // Get the R2 credentials
+      const accessKeyID = pluginConfig.accessKeyID;
+      const secretAccessKey = pluginConfig.secretAccessKey;
+      const r2URL = pluginConfig.r2URL;
+      this.r2BucketName = pluginConfig.r2BucketName;
+      // If any of these are missing, log an error and return
+      if (!accessKeyID || !secretAccessKey || !r2URL || !this.r2BucketName) {
+        logger.warning(`[${this.name}] EXDLeague plugin configuration is missing fields: accessKeyID, secretAccessKey, r2URL, or r2BucketName. R2 storage will not be used.`);
+      } else {
+        this.r2Client = new S3Client({
+          region: 'auto',
+          endpoint: r2URL,
+          credentials: {
+            accessKeyId: accessKeyID,
+            secretAccessKey: secretAccessKey,
+          },
+        });
+      }
+
       // get the DBPlayerStats table name from the config
       const dbLogStatsConfig = this.config?.plugins?.find(
         (plugin) => plugin.plugin === "DBLogStats" && plugin.enabled
@@ -80,6 +113,7 @@ class EXDLeague {
       }
 
       this.startTrackingActivePlayers();
+      // this.startPeriodicJsonStatsOutput();
     } catch (error) {
       logger.error(`[${this.name}] Error initializing EXDLeague plugin: ${error}`);
     }
@@ -484,7 +518,7 @@ class EXDLeague {
       
       logger.info(`[${this.name}] League stats updated successfully for league ${currentLeagueNumber} - ${updateResult.affectedRows} players updated in ${elapsed}ms`);
 
-      this.validateLeagueEntrants();
+      this.debugPrintChanges();
     } catch (error) {
       logger.error(`[${this.name}] Error updating league stats: ${error.message}`);
       if (connection) {
@@ -500,7 +534,34 @@ class EXDLeague {
   
   startTrackingActivePlayers() {
     const intervalMs = this.intervalMinutes * 60 * 1000;
-    this.interval = setInterval(() => this.updateCurrentLeagueMinutesPlayed(), intervalMs);
+    this.interval = setInterval(async () => {
+      try {
+        this.updateCurrentLeagueMinutesPlayed()
+      } catch (error) {
+        logger.error(`[${this.name}] Error updating current league minutes played: ${error.message}`);
+      }
+    }, intervalMs);
+  }
+
+  async startPeriodicJsonStatsOutput() {
+    // Run initial output
+    try {
+      await this.outputJSONLeagueStats();
+    } catch (error) {
+      logger.error(`[${this.name}] Error in initial JSON stats output: ${error.message}`);
+    }
+    
+    // Set up interval with proper error handling
+    this.jsonOutputInterval = setInterval(async () => {
+      try {
+        await this.outputJSONLeagueStats();
+        logger.verbose(`[${this.name}] Successfully updated JSON league stats`);
+      } catch (error) {
+        logger.error(`[${this.name}] Error in periodic JSON stats output: ${error.message}`);
+      }
+    }, this.jsonOutputIntervalMinutes * 60 * 1000);
+    
+    logger.info(`[${this.name}] Started periodic JSON stats output every ${this.jsonOutputIntervalMinutes} minutes`);
   }
 
   async updateCurrentLeagueMinutesPlayed() {
@@ -560,16 +621,15 @@ class EXDLeague {
       if (connection) await connection.rollback();
     } finally {
       if (connection) connection.release();
-    
     }
   }
 
   /*
   * We want to load leagueStatsCache with every player in the current league
-  * and their stats. We then periodically check whether the updated stats are lower than the cached stats.
-  * If they are, we log a warning as this should not happen.
+  * and their stats. We then periodically check whether the updated stats are different than the cached stats.
+  * If they are, print what's changed.
   */
-  async validateLeagueEntrants() {
+  async debugPrintChanges() {
     logger.verbose(`[${this.name}] Validating league entrants...`);
     let connection = null;
 
@@ -581,19 +641,25 @@ class EXDLeague {
         return;
       }
 
-      // Get all players in the current league
+      // Get all players in the current league with their names
       const [rows] = await connection.query(`
-        SELECT playerUID, minutes_played, kills, deaths, ai_kills, friendly_kills, friendly_ai_kills,
-               distance_walked, distance_driven, bandage_friendlies, tourniquet_friendlies,
-               saline_friendlies, morphine_friendlies
-        FROM ${this.leagueStatsTableName}
-        WHERE league_number = ? AND is_initial_snapshot = 0 AND server_name = ?
+        SELECT ls.playerUID, p.playerName, ls.minutes_played, ls.kills, ls.deaths, ls.ai_kills, 
+               ls.friendly_kills, ls.friendly_ai_kills, ls.distance_walked, ls.distance_driven, 
+               ls.bandage_friendlies, ls.tourniquet_friendlies, ls.saline_friendlies, ls.morphine_friendlies
+        FROM ${this.leagueStatsTableName} ls
+        JOIN players p ON ls.playerUID = p.playerUID
+        WHERE ls.league_number = ? AND ls.is_initial_snapshot = 0 AND ls.server_name = ?
       `, [currentLeagueNumber, this.serverName]);
 
       if (rows.length === 0) {
         logger.warn(`[${this.name}] No players found in current league ${currentLeagueNumber}.`);
         return;
       }
+
+      const columnNames = Object.keys(rows[0]);
+      // Remove minutes_played from the column names
+      const statsColumns = columnNames.filter(col => !col.includes('minutes_played'));
+      const changedValueStrings = [];
 
       // Populate the cache
       for (const row of rows) {
@@ -602,22 +668,15 @@ class EXDLeague {
         }
         if (this.leagueStatsCache.has(row.playerUID)) {
           const cachedRow = this.leagueStatsCache.get(row.playerUID);
-          // Check if the new row has lower stats than the cached one
-          if (row.minutes_played < cachedRow.minutes_played ||
-              row.kills < cachedRow.kills ||
-              row.deaths < cachedRow.deaths ||
-              row.ai_kills < cachedRow.ai_kills ||
-              row.friendly_kills < cachedRow.friendly_kills ||
-              row.friendly_ai_kills < cachedRow.friendly_ai_kills ||
-              row.distance_walked < cachedRow.distance_walked ||
-              row.distance_driven < cachedRow.distance_driven ||
-              row.bandage_friendlies < cachedRow.bandage_friendlies ||
-              row.tourniquet_friendlies < cachedRow.tourniquet_friendlies ||
-              row.saline_friendlies < cachedRow.saline_friendlies ||
-              row.morphine_friendlies < cachedRow.morphine_friendlies) {
-            logger.warn(`[${this.name}] Player ${row.playerUID} has lower stats than cached stats.`);
-            logger.warn(`[${this.name}] Cached stats: ${JSON.stringify(cachedRow)}`);
-            logger.warn(`[${this.name}] New stats: ${JSON.stringify(row)}`);
+          // loop through each stats column and check if the new row has different values
+          for (const col of statsColumns) {
+            if (cachedRow[col] !== row[col]) {
+              changedValueStrings.push(`${col}: ${cachedRow[col]} -> ${row[col]}`);
+            }
+          }
+          if (changedValueStrings.length > 0) {
+            logger.info(`[${this.name}] Player ${row.playerName} stats changed: ${changedValueStrings.join(', ')}`);
+            changedValueStrings.length = 0; // Reset for next player
           }
         }
         this.leagueStatsCache.set(row.playerUID, row);
@@ -863,7 +922,7 @@ class EXDLeague {
     }
   }
 
-  buildLeagueStatsDiffQuery(playerStatColumns) {
+  buildLeagueStatsDiffQuery(playerStatColumns, addCustomMinutesPlayedFilter = false) {
     return `
       SELECT 
         curr.playerUID,
@@ -902,7 +961,8 @@ class EXDLeague {
       WHERE curr.league_number = ?
       AND curr.server_name = ?
       AND curr.is_initial_snapshot = 0
-      ${this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0 ? 'AND p.beGUID NOT IN (?)' : ''}`;
+      ${this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0 ? 'AND p.beGUID NOT IN (?)' : ''}
+      ${addCustomMinutesPlayedFilter ? 'AND curr.minutes_played >= ?' : ''}`;
   }
 
 
@@ -1030,12 +1090,240 @@ class EXDLeague {
     }
   }
 
+  // Create a method to write out a JSON file with the current league stats
+  async outputJSONLeagueStats(filePath) {
+    // We want to create rankings for the following stats:
+    // - kills
+    // - ai_kills
+    // - deaths
+    // - distance_walked
+    // - distance_driven
+    // - Aggregate medical stats (bandage_friendlies, tourniquet_friendlies, saline_friendlies, morphine_friendlies)
+    // - minutes played
+    // - kd_ratio (kills / deaths, if deaths > 0, otherwise 0)
+
+    let connection = null;
+    try {
+      if (!this.jsonOutputDir || this.jsonOutputDir === "") {
+        logger.error(`[${this.name}] No JSON output directory specified.`);
+        return;
+      }
+
+      // Make sure we have a directory to write to
+      if (!fs.existsSync(this.jsonOutputDir)) {
+        try {
+          fs.mkdirSync(this.jsonOutputDir, { recursive: true });
+          logger.info(`[${this.name}] Created JSON output directory: ${this.jsonOutputDir}`);
+        } catch (error) {
+          logger.error(`[${this.name}] Error creating JSON output directory: ${error.message}`);
+          return;
+        }
+      }
+
+      connection = await process.mysqlPool.getConnection();
+      const currentLeagueNumber = await this.getCurrentLeagueNumber(connection);
+      
+      if (currentLeagueNumber === null) {
+        logger.warn(`[${this.name}] No valid league number found. Skipping JSON export.`);
+        connection.release();
+        return;
+      }
+
+      // If no filePath is provided, create one with the server name and current date
+      let filename = `${this.serverName}_league_${currentLeagueNumber}_stats.json`;
+      if (!filePath) {
+        filePath = path.join(this.jsonOutputDir, filename);
+      }
+
+      const [leagueSettings] = await connection.query(
+        `SELECT * FROM ${this.leagueSettingsTableName} WHERE league_number = ? AND server_name = ?`,
+        [currentLeagueNumber, this.serverName]
+      );
+
+      if (leagueSettings.length === 0) {
+        logger.warn(`[${this.name}] No league settings found for league number ${currentLeagueNumber}.`);
+        connection.release();
+        return;
+      }
+
+      logger.verbose(`[${this.name}] Writing current league stats to file: ${filePath}`);
+
+      // Define columns we want to include in the diff
+      const playerStatColumns = [
+        'deaths',
+        'kills',
+        'ai_kills',
+        'friendly_kills',
+        'friendly_ai_kills',
+        'distance_walked',
+        'distance_driven',
+        'bandage_friendlies',
+        'tourniquet_friendlies',
+        'saline_friendlies',
+        'morphine_friendlies',
+        'minutes_played'
+      ];
+
+      // Query to get all stats with player names, with an additional where param for minimum minutes played
+      let statsQuery = this.buildLeagueStatsDiffQuery(playerStatColumns, true);
+     
+      // Add blacklist parameter if we have entries
+      let params = [currentLeagueNumber, this.serverName];
+      if (this.blacklistBEGUIDs && this.blacklistBEGUIDs.length > 0) {
+        params.push(this.blacklistBEGUIDs);
+      }
+
+      params.push(30); // Minimum 30 minutes played
+      
+      const [allPlayerStats] = await connection.query(statsQuery, params);
+      
+      if (allPlayerStats.length === 0) {
+        logger.warn(`[${this.name}] No player stats found for league number ${currentLeagueNumber}.`);
+        connection.release();
+        return;
+      }
+      
+      // Also get the total number of participants in the league
+      const [totalEntrants] = await connection.query(
+        `SELECT COUNT(*) AS total FROM ${this.leagueStatsTableName} WHERE league_number = ? AND server_name = ? AND is_initial_snapshot = 0`,
+        [currentLeagueNumber, this.serverName]
+      );
+
+      // Build the JSON data structure
+      const statsData = {
+        leagueInfo: {
+          number: currentLeagueNumber,
+          server: this.serverName,
+          startDate: leagueSettings[0].league_start,
+          totalPlayers: totalEntrants[0].total,
+          exportDate: new Date().toISOString()
+        },
+        // Section 1: Time Played
+        timePlayed: allPlayerStats
+          .sort((a, b) => b.minutes_played_in_league - a.minutes_played_in_league)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: parseFloat(player.minutes_played_in_league.toFixed(2))
+          })),
+
+        // Section 2: Player Kills
+        playerKills: allPlayerStats
+          .sort((a, b) => b.diff_kills - a.diff_kills)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: Math.round(player.diff_kills)
+          })),
+
+        // Section 3: AI Kills
+        aiKills: allPlayerStats
+          .sort((a, b) => b.diff_ai_kills - a.diff_ai_kills)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: Math.round(player.diff_ai_kills)
+          })),
+
+        // Section 4: Deaths
+        deaths: allPlayerStats
+          .sort((a, b) => b.diff_deaths - a.diff_deaths)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: Math.round(player.diff_deaths)
+          })),
+
+        // Section 5: Kill/Death Ratio (minimum 30 minutes played)
+        kdRatio: allPlayerStats
+          .filter(player => player.minutes_played_in_league >= 30)
+          .sort((a, b) => b.kd_ratio - a.kd_ratio)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: parseFloat(player.kd_ratio.toFixed(2))
+          })),
+
+        // Section 6: Distance Walked
+        distanceWalked: allPlayerStats
+          .sort((a, b) => b.diff_distance_walked - a.diff_distance_walked)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: parseFloat((player.diff_distance_walked / 1000).toFixed(2)) // Convert to km
+          })),
+
+        // Section 7: Distance Driven
+        distanceDriven: allPlayerStats
+          .sort((a, b) => b.diff_distance_driven - a.diff_distance_driven)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: parseFloat((player.diff_distance_driven / 1000).toFixed(2)) // Convert to km
+          })),
+
+        // Section 8: Medical Actions
+        medicalActions: allPlayerStats
+          .sort((a, b) => b.total_medical - a.total_medical)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: Math.round(player.total_medical)
+          })),
+        
+        friendlyKills: allPlayerStats
+          .sort((a, b) => b.diff_friendly_kills - a.diff_friendly_kills)
+          .map((player, index) => ({
+            rank: index + 1,
+            playerName: player.playerName,
+            value: Math.round(player.diff_friendly_kills)
+          }))
+      };
+
+      // Write the JSON file
+      try {
+        // ensure this overwrites the file if it already exists
+        logger.verbose(`[${this.name}] Writing league stats to file: ${filePath}`);
+
+        const fileContents = JSON.stringify(statsData, null, 2);
+        await fs.promises.writeFile(filePath, fileContents, 'utf8');
+        logger.info(`[${this.name}] League stats successfully written to ${filePath}`);
+
+        // Now upload this file to R2
+        if (this.r2Client !== null && this.r2BucketName) {
+          const uploadURL = await getSignedUrl(this.r2Client, new PutObjectCommand({ Bucket: this.r2BucketName, Key: filename }))
+          const response = await fetch(uploadURL, { method: 'PUT', body: fileContents })
+          if (!response.ok) {
+            throw new Error(`Failed to upload file to R2: ${response.statusText}`);
+          } else {
+            logger.info(`[${this.name}] League stats file successfully uploaded to R2: ${this.r2BucketName}/${filename}`);
+          }
+        }
+
+        return filePath;
+      } catch (error) {
+        logger.error(`[${this.name}] Error writing league stats to file: ${error.message}`);
+      }
+
+    } catch (error) {
+      logger.error(`[${this.name}] Error generating league stats file: ${error.message}`);
+    } finally {
+      if (connection) {
+        connection.release();
+      }
+    }
+  }
+
 
   async cleanup() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }  
+    if (this.jsonOutputInterval) {
+      clearInterval(this.jsonOutputInterval);
+      this.jsonOutputInterval = null;
+    }
 
     if (this.serverInstance) {
       this.serverInstance.removeAllListeners("playerStatsUpdated");

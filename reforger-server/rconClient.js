@@ -34,8 +34,8 @@ class BattleEyeClientReforger {
     if (this.socket) {
       try {
         this.socket.close();
-      } catch (err) {
-      }
+      // eslint-disable-next-line no-unused-vars
+      } catch (err) { /* empty */ }
     }
     
     try {
@@ -110,7 +110,7 @@ class BattleEyeClientReforger {
             return;
           }
 
-          const seq = message[8];
+          // const seq = message[8];
 
           if (message.length >= 12 && message[9] === 0x00) {
             const totalPackets = message[10];

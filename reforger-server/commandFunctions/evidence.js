@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { escapeMarkdown, classifyUserQueryInfo } = require('../../helpers');
+const { classifyUserQueryInfo } = require('../../helpers');
 const logger = require('../logger/logger');
 
 module.exports = async (interaction, serverInstance, discordClient, extraData = {}) => {
@@ -12,6 +12,9 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         const identifier = extraData.identifier.trim();
         const reason = extraData.reason;
         const evidenceUrl = extraData.evidence;
+
+        const commandConfig = serverInstance.config.commands.find(c => c.command === 'evidence');
+        const destinationChannel = commandConfig.destinationChannel || 'your evidence channel';
         
         logger.info(`[Evidence Command] User: ${user.username} (ID: ${user.id}) used /evidence with identifier: ${identifier}, reason: ${extraData.reason || 'N/A'}, evidence URL: ${extraData.evidence_url || 'N/A'}`);
 
@@ -101,8 +104,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         const bmReforgerIdURL = await battleMetricsClient.fetchBMPlayerURL(player.playerUID);
         const bmSteamIdURL = player.steamID ? await battleMetricsClient.fetchBMPlayerURL(player.steamID) : null;
 
-
-        let playerInfo = `Name: ${escapeMarkdown(player.playerName) || 'Missing Player Name'}` +
+        let playerInfo = `Name: ${player.playerName || 'Missing Player Name'}` +
                           `\nReforger ID: ${player.playerUID || 'Missing UUID'}` + 
                           `\nReforger ID BM URL: ${bmReforgerIdURL || 'Not Found'}`;
         
@@ -113,23 +115,23 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             }
         }
         // add reason and optional evidence URL
-        playerInfo += `\nReason: ${escapeMarkdown(reason) || 'No reason provided'}`;
+        playerInfo += `\nReason: ${reason || 'No reason provided'}`;
         if (evidenceUrl) {
-            playerInfo += `\nEvidence URL: ${escapeMarkdown(evidenceUrl)}`;
+            playerInfo += `\nEvidence URL: ${evidenceUrl}`;
         }
 
         const fields = [
           {
-            name: 'Player details',
-            value: playerInfo
+            name: '',
+            value: '```' + playerInfo + '```',
           }
         ];
         
         const embed = new EmbedBuilder()
           .setTitle('🧾 Evidence report')
-          .setDescription(`Formatted output to be pasted into #evidence-storage\n`)
+          .setDescription(`Paste the following into ${destinationChannel}\n`)
           .setColor("#00A5FF")
-          .setFooter({ text: "EXD ReforgerJS" })
+          .setFooter({ text: "EXD ReforgerJS customised by Bewilderbeest" })
           .addFields(fields);
 
         logger.verbose(`[Evidence Command] Sending embed with player details for identifier: ${identifier}`);

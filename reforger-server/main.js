@@ -132,6 +132,12 @@ class ReforgerServer extends EventEmitter {
       //logger.verbose(`Server Health updated: FPS: ${global.serverFPS}, Memory: ${global.serverMemoryUsage} kB (${memoryMB} MB), Player Count: ${global.serverPlayerCount}`);
     });
 
+    this.logParser.on("serverStart", (data) => {
+      // Comes in with time and configFileName
+      logger.info(`Server started at ${data.time}`);
+      this.emit("serverStart", data);
+    });
+
     // Game state events
     this.setupGameStateEventHandlers();
   }
@@ -199,31 +205,29 @@ class ReforgerServer extends EventEmitter {
     //    device: "PC"
     // }
     
-    // Don't do this, as we use rcon for live player tracking, and let this players array 
-    // time players out differently
-    //
-    // this.logParser.on("playerDisconnected", (data) => {
-    //   const { playerName } = data;
-    //   if (this.rcon) {
-    //     const playerIndex = this.rcon.players.findIndex((p) => p.name === playerName);
-    //     if (playerIndex !== -1) {
-    //       const removedPlayer = this.rcon.players.splice(playerIndex, 1)[0];
-    //       // add the removePlayer information to data
-    //       data.name = removedPlayer.name || null;
-    //       data.number = removedPlayer.number || null;
-    //       data.ip = removedPlayer.ip || null;
-    //       data.uid = removedPlayer.uid || null;
-    //       data.beGUID = removedPlayer.beGUID || null;
-    //       data.steamID = removedPlayer.steamID || null;
-    //       data.device = removedPlayer.device || null;
-    //     } else {
-    //       logger.warn(`Player disconnected but not found in RCON players list: ${playerName}`);
-    //     }
-    //   } else {
-    //     logger.warn(`Player disconnected but RCON is not initialized: ${playerName}`);
-    //   }
-    //   this.emit("playerDisconnected", data);
-    // });
+    this.logParser.on("playerDisconnected", (data) => {
+      const { playerName } = data;
+      if (this.rcon) {
+        const playerIndex = this.rcon.players.findIndex((p) => p.name === playerName);
+        if (playerIndex !== -1) {
+          const player = this.rcon.players[playerIndex];
+          // add the player information to data
+          data.name = player.name || null;
+          data.number = player.number || null;
+          data.ip = player.ip || null;
+          data.uid = player.uid || null;
+          data.beGUID = player.beGUID || null;
+          data.steamID = player.steamID || null;
+          data.device = player.device || null;
+        } else {
+          logger.warn(`Player disconnected but not found in RCON players list: ${playerName}`);
+        }
+      } else {
+        logger.warn(`Player disconnected but RCON is not initialized: ${playerName}`);
+      }
+      logger.verbose(`Player disconnected: ${playerName}`);
+      this.emit("playerDisconnected", data);
+    });
 
     // Emitted playerUpdate event data structure example:
     // {
