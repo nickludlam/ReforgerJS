@@ -6,7 +6,7 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 
 const config = require('../../config.json');
 
-const consoleLogLevel = config.consoleLogLevel || 'info';
+const consoleLogLevel = config.consoleLogLevel || 'verbose';
 const outputLogLevel  = config.outputLogLevel  || 'info';
 const outputLogsDir = config.outputLogsDir || path.join(__dirname, 'logs');
 

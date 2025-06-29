@@ -72,7 +72,7 @@ class DBLog {
     this.name = "DBLog Plugin";
     this.interval = null;
     this.logIntervalMinutes = 5;
-    this.playerUpdateEventQueue = new PlayerUpdateQueue(100);
+    this.playerUpdateEventQueue = new PlayerUpdateQueue(400);
     this.isInitialized = false;
     this.serverInstance = null;
     this.playerCache = new Map();
@@ -273,7 +273,7 @@ class DBLog {
       
       if (isFull) {
         // If queue is full, process all items
-        logger.info(`[${this.name}] Player update event queue reached max size. Processing batch.`);
+        // logger.verbose(`[${this.name}] Player update event queue reached max size. Processing batch.`);
         const players = await this.playerUpdateEventQueue.dequeueAll();
         await this.batchProcessPlayers(players);
       }

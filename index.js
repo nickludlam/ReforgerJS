@@ -6,6 +6,7 @@ const { validateConfig, performStartupChecks } = require('./reforger-server/fact
 const { loadPlugins, mountPlugins } = require('./reforger-server/pluginLoader');
 const logger = require('./reforger-server/logger/logger');
 const deployCommands = require('./deploy-commands');
+const BattleMetrics = require('./reforger-server/battlemetrics');
 
 function loadConfig(filePath) {
     try {
@@ -111,10 +112,13 @@ async function main() {
         });
 
         // 9) Instantiate the BattleMetrics class, and assign to process.battleMetrics
-        const BattleMetrics = require('./reforger-server/battlemetrics');
-        const battleMetricsInstance = new BattleMetrics(config);
-        await battleMetricsInstance.prepareToMount(serverInstance);
-        process.battleMetrics = battleMetricsInstance;
+        try {
+          const battleMetricsInstance = new BattleMetrics(config);
+          await battleMetricsInstance.validateCredentials(serverInstance);
+          process.battleMetrics = battleMetricsInstance;
+        } catch (error) {
+          logger.error(`Error initializing BattleMetrics: ${error.message}`);
+        }
 
     } catch (error) {
         logger.error(`An error occurred: ${error.message}`);

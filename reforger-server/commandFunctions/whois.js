@@ -1,5 +1,6 @@
 const { escapeMarkdown, classifyUserQueryInfo } = require('../../helpers');
 const geoIPLookup = require('../utils/geoIPLookup');
+const BattlemetricsSync = require('../plugins/BattlemetricsSync');
 
 // Initialize the GeoIP database reader
 const geoipInitialized = geoIPLookup.initialize();
@@ -20,6 +21,8 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 logger.warn('[Whois Command] GeoIP database could not be initialized during command execution. Country information will not be available.');
             }
         }
+
+        const bmSyncPlugin = serverInstance.pluginInstances.find((plugin) => plugin instanceof BattlemetricsSync);
 
         const user = interaction.user;
         const identifier = extraData.identifier.trim();
@@ -114,6 +117,22 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             const bmReforgerURL = `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${rows[0].playerUID}&method=quick&redirect=1`
             const bmSteamURL = rows[0].steamID ? `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${rows[0].steamID}&method=quick&redirect=1` : null;
 
+            var banDetails = '';
+            const bans = await bmSyncPlugin.getBanByReforgerUUIDs([rows[0].playerUID]);
+            if (bans && bans.length > 0) {
+              logger.info(`[Whois Command] Found ${bans.length} bans for Reforger UUID: ${rows[0].playerUID}`);
+              banDetails = bans.map((ban) => {
+                return `**Ban ID:** ${ban.id}\n` +
+                       `**Reason:** ${ban.reason || 'No reason provided'}\n` +
+                       `**Note:** ${ban.note || 'No note provided'}\n` +
+                       `**Expires At:** ${ban.expiresAt ? ban.expiresAt.toISOString() : 'Never'}\n`
+              }).join('\n\n');
+              banDetails = `**Bans for Reforger UUID ${rows[0].playerUID}:**\n\n` + banDetails;
+              banDetails.trim();
+              logger.verbose(`[Whois Command] Ban details: ${banDetails}`);
+            }
+            
+
             const embeds = [];
             let currentEmbed = {
                 title: 'Reforger Lookup Directory',
@@ -154,6 +173,10 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                 const isOnline = playerList.some((p) => p.beGUID?.trim().toLowerCase() === player.beGUID?.trim().toLowerCase());
                 const playerIsOnlineLine = isOnline ? 'Currently Online' : 'Currently Offline';
                 playerInfo += `\nStatus: ${playerIsOnlineLine}`;
+
+                if (banDetails) {
+                    playerInfo += `\n\n${banDetails}\n`;
+                }
 
                 if (bmReforgerURL) {
                     playerInfo += `\n[BattleMetrics Reforger ID Lookup](${bmReforgerURL})`;

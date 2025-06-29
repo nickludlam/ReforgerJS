@@ -1,8 +1,8 @@
 const fs = require('fs');
-const path = require('path');
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const mysql = require('mysql2/promise');
-const fetch = require('node-fetch'); 
+const BattleMetricsAPI = require("./battlemetricsAPI");
+
 
 /**
  * Load and parse the config file.
@@ -33,7 +33,7 @@ function validateConfig(config) {
       return false;
     }
   } catch (error) {
-    logger.error('Invalid configuration: Error parsing config.json.');
+    logger.error('Invalid configuration: Error parsing config.json. ' + error.message);
     return false;
   }
 
@@ -194,7 +194,7 @@ async function performStartupChecks(config) {
           return pool;
         } catch (error) {
           attempt += 1;
-          logger.warn(`MySQL reconnection attempt ${attempt} failed. Retrying in ${retryDelay / 1000} seconds...`);
+          logger.warn(`MySQL reconnection attempt ${attempt} failed with error ${error}. Retrying in ${retryDelay / 1000} seconds...`);
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
           retryDelay = Math.min(retryDelay * 2, 60000);
         }
@@ -220,6 +220,32 @@ async function performStartupChecks(config) {
         logger.error(`Unhandled MySQL Pool Error: ${err.message}`);
       }
     });
+  }
+
+  // 5) Battlemetrics API initialization
+  if (
+    config.connectors.battlemetrics &&
+    config.connectors.battlemetrics.enabled
+  ) {
+    try {
+      logger.info("Initializing BattleMetrics API client...");
+      const battlemetricsAPI = new BattleMetricsAPI(config);
+
+      await battlemetricsAPI.validateCredentials();
+
+      // Attach the BattleMetrics API client to the process object for global access
+      process.battlemetricsAPI = battlemetricsAPI;
+      logger.info(
+        "BattleMetrics API client initialized and validated successfully."
+      );
+    } catch (error) {
+      logger.error(
+        `Failed to initialize BattleMetrics API client: ${error.message}`
+      );
+      logger.error("BattleMetrics functionality will be disabled.");
+    }
+  } else {
+    logger.verbose("BattleMetrics API client not configured or disabled.");
   }
 
   return discordClient;

@@ -14,7 +14,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
     const requestedServer = extraData.server;
     const commandLevel = extraData.commandLevel || 0;
     const userHasCommandLevel = extraData.userHasCommandLevel || 0;
-    console.log(`[Stats Command] User: ${user.username} (ID: ${user.id}) requested stats for identifier: ${identifier}`);
+    logger.info(`[Stats Command] User: ${user.username} (ID: ${user.id}) requested stats for identifier: ${identifier}`);
 
     if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({ ephemeral: true });

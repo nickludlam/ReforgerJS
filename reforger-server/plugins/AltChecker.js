@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const logger = require("../logger/logger");
 const { escapeMarkdown } = require('../../helpers');
+const BattlemetricsSync = require("./BattlemetricsSync");
 
 class AltChecker {
   constructor(config) {
@@ -18,6 +19,8 @@ class AltChecker {
     this.mostRecentBEGUIDsAnnounced = new Set();
     this.broadcastSuppressionInterval = 10 * 60 * 1000; // rate limit broadcasts to every 10 minutes
     this.cacheTTL = 5 * 60 * 1000;
+
+    this.battleMetricsSyncPlugin = null;
   }
 
   async prepareToMount(serverInstance, discordClient) {
@@ -42,6 +45,12 @@ class AltChecker {
         return;
       }
   
+      const bmPlugin = serverInstance.pluginInstances.find((plugin) => plugin instanceof BattlemetricsSync);
+      if (bmPlugin) {
+        this.battleMetricsSyncPlugin = bmPlugin;
+        logger.verbose(`[${this.name}] Found BattlemetricsSync plugin instance.`);
+      }
+
       this.channelId = pluginConfig.channel;
       this.logAlts = pluginConfig.logAlts || false;
       this.logOnlyOnline = pluginConfig.logOnlyOnline || false;
@@ -82,8 +91,6 @@ class AltChecker {
     }
   }
   
-
-
   async handlePlayerJoined(player) {
     try {
       // If the timestamp is invalid or more than 1 minute old, ignore it
@@ -137,6 +144,22 @@ class AltChecker {
         return;
       }
 
+      // get a list of the reforger UUIDs for the altAccounts
+      const reforgerIDs = altAccounts.map((alt) => alt.playerUID).filter((uid) => uid);
+
+      const bans = [];
+      if (this.battleMetricsSyncPlugin) {
+        logger.verbose(`[${this.name}] Fetching bans for alt accounts of player ${playerName} with IP ${playerIP} using reforger UUIDs: ${reforgerIDs.join(", ")}`);
+        // Fetch bans for the reforger UUIDs
+        const fetchedBans = await this.battleMetricsSyncPlugin.getBanByReforgerUUIDs(reforgerIDs);
+        if (fetchedBans && fetchedBans.length > 0) {
+          bans.push(...fetchedBans);
+          logger.info(`[${this.name}] Found ${fetchedBans.length} bans for alt accounts of player ${playerName} with IP ${playerIP}.`);
+        }
+      } else {
+        logger.warn(`[${this.name}] BattlemetricsSync plugin is not available. Cannot fetch bans for alt accounts.`);
+      }
+
       const playerList = this.serverInstance.players || [];
       const onlineBeGUIDs = new Set(playerList.map((p) => p.beGUID?.trim().toLowerCase()).filter((beGUID) => beGUID));
       let atLeastOneOnline = false;
@@ -184,16 +207,33 @@ class AltChecker {
         this.lastBroadcastTime.set(guid, currentTime);
       });
 
+      const title = bans.length > 0 ? `🚨 Potential Ban Evasion Detected 🚨` : `Potential Alt Accounts Detected`;
+
+      const fields = [
+        { name: "Usernames", value: [`${escapeMarkdown(playerName)}`, ...altAccounts.map((alt) => `${escapeMarkdown(alt.playerName) || "Unknown"}`)].join("\n"), inline: true },
+        { name: "Reforger BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
+        { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
+      ]
+
+      if (bans.length > 0) {
+        fields.push({
+          name: "Bans",
+          value: bans.map((ban) => {
+            const reason = ban.reason || "No reason provided";
+            const expires = ban.expires ? new Date(ban.expires).toLocaleString() : "Permanent";
+            const note = ban.note ? `\n**Note:** ${ban.note.replace(/<\/?[^>]+(>|$)/g, "")}` : "";
+            return `**Reason:** ${reason}\n**Expires:** ${expires}${note}`;
+          }).join("\n\n"),
+          inline: false
+        });
+      }
+
       if (this.logAlts) {
         const embed = new EmbedBuilder()
-          .setTitle("Potential Alt Detected")
+          .setTitle(title)
           .setDescription(`**Server:** ${this.config.server.name}\n**📡 IP Address:** ${playerIP}`)
           .setColor("#FFA500")
-          .addFields(
-            { name: "Usernames", value: [`${escapeMarkdown(playerName)}`, ...altAccounts.map((alt) => `${escapeMarkdown(alt.playerName) || "Unknown"}`)].join("\n"), inline: true },
-            { name: "Reforger BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
-            { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
-          )
+          .addFields(fields)
           .setFooter({ text: "EXD ReforgerJS customised by Bewilderbeest" });
 
         try {

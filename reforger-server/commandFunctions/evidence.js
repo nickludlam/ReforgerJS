@@ -100,6 +100,12 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
         // use the battlemetrics client to get a URL for the Reforger ID and Steam ID
         const battleMetricsClient = process.battleMetrics;
+        if (!battleMetricsClient) {
+            logger.warn(`[Evidence Command] BattleMetrics client is not initialized. Cannot fetch BM URLs.`);
+            await interaction.editReply('BattleMetrics client is not initialized. Cannot fetch player URLs.');
+            return;
+        }
+
         // use battleMetricsClient.fetchBMPlayerURL on the playerUID
         const bmReforgerIdURL = await battleMetricsClient.fetchBMPlayerURL(player.playerUID);
         const bmSteamIdURL = player.steamID ? await battleMetricsClient.fetchBMPlayerURL(player.steamID) : null;
