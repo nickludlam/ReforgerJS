@@ -499,11 +499,12 @@ class BattleMetricsAPI {
         ...params,
       });
 
+      var pageCount = 0;
+
       logger.verbose(`Fetching page ${pageCount + 1} of the ban list`);
 
       var url = `${this.baseUrl}/bans?${queryParams.toString()}`;
       var allBans = new Map(); // map of ban id to ban objects
-      var pageCount = 0;
 
       // We need to keep fetching until we no longer get a 'next' link
       do {

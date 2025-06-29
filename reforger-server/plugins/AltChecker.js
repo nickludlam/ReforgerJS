@@ -211,21 +211,29 @@ class AltChecker {
 
       const fields = [
         { name: "Usernames", value: [`${escapeMarkdown(playerName)}`, ...altAccounts.map((alt) => `${escapeMarkdown(alt.playerName) || "Unknown"}`)].join("\n"), inline: true },
-        { name: "Reforger BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
+        { name: "BE GUID", value: [`${beGUID || "Missing BE GUID"}`, ...altAccounts.map((alt) => `${alt.beGUID || "Missing BE GUID"}`)].join("\n"), inline: true },
         { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
       ]
 
       if (bans.length > 0) {
-        fields.push({
-          name: "Bans",
-          value: bans.map((ban) => {
-            const reason = ban.reason || "No reason provided";
-            const expires = ban.expires ? new Date(ban.expires).toLocaleString() : "Permanent";
-            const note = ban.note ? `\n**Note:** ${ban.note.replace(/<\/?[^>]+(>|$)/g, "")}` : "";
-            return `**Reason:** ${reason}\n**Expires:** ${expires}${note}`;
-          }).join("\n\n"),
-          inline: false
-        });
+        if (bans.length < 3) {
+          fields.push({
+            name: "Bans",
+            value: bans.map((ban) => {
+              const reason = ban.reason || "No reason provided";
+              const expires = ban.expires ? new Date(ban.expires).toLocaleString() : "Permanent";
+              const note = ban.note ? `\n**Note:** ${ban.note.replace(/<\/?[^>]+(>|$)/g, "")}` : "";
+              return `**Reason:** ${reason}\n**Expires:** ${expires}${note}`;
+            }).join("\n\n"),
+            inline: false
+          });
+        } else {
+          // We don't have enough space to show all bans, so we just show the count
+          fields.push({
+            name: "Bans",
+            value: `**Total ban count:** ${bans.length}`
+          });
+        }
       }
 
       if (this.logAlts) {

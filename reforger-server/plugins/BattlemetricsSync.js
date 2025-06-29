@@ -6,6 +6,7 @@ class BattlemetricsSync {
     this.name = "Battlemetrics Sync Plugin";
     this.isInitialized = false;
 
+    this.syncEnabled = false; // Default to false, can be set in config
     this.fullSyncIntervalMinutes = 120; // Default sync interval in minutes
     this.incrementalSyncIntervalMinutes = 15; // Default incremental sync interval in minutes
 
@@ -41,6 +42,11 @@ class BattlemetricsSync {
           return;
         }
 
+        if (pluginConfig.syncEnabled) {
+          this.syncEnabled = pluginConfig.syncEnabled;
+          logger.verbose(`[${this.name}] Sync is enabled in config.`);
+        }
+
         // Check if interval is defined, is a number, and is positive
         if (
           pluginConfig.fullSyncIntervalMinutes !== undefined &&
@@ -74,9 +80,15 @@ class BattlemetricsSync {
         }
       }
 
-      await this.setupSchema();
-      await this.migrateSchema();
-      this.startPeriodicSync();
+      // TODO: We're actually using this less as a seaprate plugin, and more like a class because other classes call getBanByReforgerUUIDs directly
+      // We might want to refactor this later to be more like a plugin, and getBanByReforgerUUIDs gets refactored out to be elsewhere
+
+      if (this.syncEnabled) {
+        logger.info(`[${this.name}] Sync is enabled. Starting periodic sync...`);
+        await this.setupSchema();
+        await this.migrateSchema();
+        this.startPeriodicSync();
+      }
 
       this.isInitialized = true;
       logger.info(`[${this.name}] Initialized: Listening to playerJoined events and syncing bans every ${this.syncIntervalMinutes} minutes.`);
@@ -113,10 +125,16 @@ class BattlemetricsSync {
 
   async startPeriodicSync() {
     logger.info(`[${this.name}] Starting periodic sync every ${this.syncIntervalMinutes} minutes...`);
-    await this.syncBattlemetricsData();
+
+    // Initially we will perform a full sync
+    await this.syncBattlemetricsData(false);
+
     this.syncInterval = setInterval(async () => {
       // Now decide if we're incremental or full sync
       const now = new Date();
+
+      logger.verbose(`[${this.name}] Checking if periodic sync is needed...`);
+
       const shouldFullSync = !this.lastFullSync || (now - this.lastFullSync) >= (this.fullSyncIntervalMinutes * 60 * 1000);
 
       try {
@@ -262,6 +280,7 @@ class BattlemetricsSync {
       if (connection) {
         connection.release();
       }
+      this.lastFullSync = new Date(); // Update last full sync time
     }
   }
 
@@ -322,7 +341,6 @@ class BattlemetricsSync {
       return cachedBans;
     } finally {
       connection.release();
-      this.lastFullSync = new Date(); // Update last full sync time
     }
   }
 
