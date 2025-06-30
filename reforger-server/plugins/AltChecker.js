@@ -249,6 +249,12 @@ class AltChecker {
         { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
       ]
 
+      var teamPingMessage = null;
+      if (bans.length > 0) {
+        const roleMention = `<@&${this.roleNotificationId}>`;
+        teamPingMessage = `${roleMention} Attention! Potential ban evasion detected by player **${escapeMarkdown(playerName)}** with IP **${playerIP}**. Please investigate.`;
+      }
+
       if (this.logAlts) {
         const embed = new EmbedBuilder()
           .setTitle(title)
@@ -258,11 +264,10 @@ class AltChecker {
           .setFooter({ text: "EXD ReforgerJS customised by Bewilderbeest" });
 
         try {
-          await this.channelOrThread.send({ embeds: [embed] });
-
-          if (this.roleNotificationId && bans.length > 0) {
-            const roleMention = `<@&${this.roleNotificationId}>`;
-            await this.channelOrThread.send(`${roleMention} Attention! Potential ban evasion detected by player **${escapeMarkdown(playerName)}** with IP **${playerIP}**. Please investigate.`);
+          if (bans.length === 0) {
+            await this.channelOrThread.send({ embeds: [embed] });
+          } else {
+            await this.channelOrThread.send({ embeds: [embed], content: teamPingMessage });
           }
 
           logger.info(`[${this.name}] Alt accounts detected and logged for IP: ${playerIP}`);

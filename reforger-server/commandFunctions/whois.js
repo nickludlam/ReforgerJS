@@ -62,21 +62,23 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             
             if (dbField === 'playerName') {
                 query = `
-                    SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen,
+                    SELECT DISTINCT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen,
                           CASE
                               WHEN LOWER(playerName) = LOWER(?) THEN 1  -- Exact match
                               WHEN LOWER(playerName) LIKE LOWER(?) THEN 2  -- Partial match
                               ELSE 3  -- Other matches
-                          END AS rank
+                          END AS matchRank
                     FROM players
                     WHERE LOWER(playerName) LIKE LOWER(?)
-                    ORDER BY rank, lastSeen DESC
+                    ORDER BY matchRank, lastSeen DESC
                 `;
                 params = [identifier, `%${identifier}%`, `%${identifier}%`];
             } else {
                 query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen FROM players WHERE ${dbField} = ?`;
                 params = [identifier];
             }
+
+
 
             const [rows] = await pool.query(query, params);
 
@@ -111,9 +113,9 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
                     
                     let playerDetails = `${i+1}. **${escapeMarkdown(player.playerName) || 'Unknown'}**\n` +
                                         `   Reforger UUID: ${player.playerUID || 'Missing'}\n` +
-                                        `   be GUID: ${player.beGUID || 'Missing'}\n` +
                                         `   IP: ${player.playerIP || 'Missing'}${countryInfo}\n` +
-                                        `   Device: ${player.device || 'Not Found'}\n`;
+                                        `   Device: ${player.device || 'Not Found'}\n` + 
+                                        `   Last Seen: ${player.lastSeen || 'Not Found'}`;
                     
                     responseMessage += playerDetails + '\n';
                 }
