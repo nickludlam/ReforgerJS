@@ -15,10 +15,15 @@ class AltChecker {
     this.logOnlyOnline = false;
     this.whitelistBEGUIDs = new Set();
     this.playerIPCache = new Map();
+    this.playerIPCacheTTL = 5 * 60 * 1000; // 5 minutes
+
     this.lastBroadcastTime = new Map(); // Store the last broadcast time for each player
-    this.mostRecentBEGUIDsAnnounced = new Set();
-    this.broadcastSuppressionInterval = 10 * 60 * 1000; // rate limit broadcasts to every 10 minutes
-    this.cacheTTL = 5 * 60 * 1000;
+    this.broadcastSuppressionIntervalMinutes = 20 * 60 * 1000; // rate limit broadcasts to every 10 minutes
+
+    this.recentAnnounceCacheTTL = 60 * 60 * 1000; // 60 minutes
+    this.recentAnnouncePurgeInterval = null;
+
+    this.roleNotificationId = null; // If we should send a notification to the Discord team 
 
     this.battleMetricsSyncPlugin = null;
   }
@@ -50,6 +55,8 @@ class AltChecker {
         this.battleMetricsSyncPlugin = bmPlugin;
         logger.verbose(`[${this.name}] Found BattlemetricsSync plugin instance.`);
       }
+
+      this.roleNotificationId = pluginConfig.roleNotificationId || null;
 
       this.channelId = pluginConfig.channel;
       this.logAlts = pluginConfig.logAlts || false;
@@ -88,6 +95,26 @@ class AltChecker {
       logger.info(`[${this.name}] Initialized and listening to playerJoined events.`);
     } catch (error) {
       logger.error(`[${this.name}] Error during initialization: ${error.stack}`);
+    }
+  }
+
+  periodicPugeOldCacheEntries() {
+    // Purge old entries every 30 minutes
+    this.recentAnnouncePurgeInterval = setInterval(() => {
+      this.purgeOldCacheEntries();
+    }, this.recentAnnounceCacheTTL);
+    logger.verbose(`[${this.name}] Periodic purge of old cache entries set to every ${this.recentAnnounceCacheTTL / 60000} minutes.`);
+  }
+
+  purgeOldCacheEntries() {
+    const now = Date.now();
+    // Now purge old entries from lastBroadcastTime
+    for (const [guid, lastTime] of this.lastBroadcastTime.entries()) {
+      // Check if the last broadcast time is older than the suppression interval
+      if (now - lastTime > this.recentAnnounceCacheTTL) {
+        this.lastBroadcastTime.delete(guid);
+        logger.verbose(`[${this.name}] Purged last broadcast time for BE GUID: ${guid}`);
+      }
     }
   }
   
@@ -133,7 +160,7 @@ class AltChecker {
         this.playerIPCache.set(playerIP, rows);
 
         // Set timeout to clear cache entry
-        setTimeout(() => this.playerIPCache.delete(playerIP), this.cacheTTL);
+        setTimeout(() => this.playerIPCache.delete(playerIP), this.playerIPCacheTTL);
       }
 
       const altAccounts = this.playerIPCache.get(playerIP).filter(
@@ -185,29 +212,36 @@ class AltChecker {
       // Now populate the lastBroadcastTime for the player and the alts
       const allPlayerBEGUIDs = [beGUID, ...altAccounts.map((alt) => alt.beGUID)];
 
-      // Check this.mostRecentBEGUIDsAnnounced to see if ALL of the BE GUIDs have been announced in the most recent broadcast
-      const allBEGUIDsAnnounced = allPlayerBEGUIDs.every((guid) => this.mostRecentBEGUIDsAnnounced.has(guid));
-      if (allBEGUIDsAnnounced) {
-        logger.verbose(`[${this.name}] All BE GUIDs have been announced recently. Suppressing broadcast.`);
-        return;
-      }
-      // Update this.mostRecentBEGUIDsAnnounced with the current BE GUIDs
-      this.mostRecentBEGUIDsAnnounced = new Set(allPlayerBEGUIDs);
-
-      // Now check the lastBroadcastTime for each BE GUID
+      // Now check the lastBroadcastTime for each BE GUID, and suppress the broadcast if it was sent within the suppression interval
       const currentTime = Date.now();
       allPlayerBEGUIDs.forEach((guid) => {
         if (this.lastBroadcastTime.has(guid)) {
           const lastTime = this.lastBroadcastTime.get(guid);
-          if (currentTime - lastTime < this.broadcastSuppressionInterval) {
+          if (currentTime - lastTime < this.broadcastSuppressionIntervalMinutes) {
             logger.verbose(`[${this.name}] Suppressing broadcast for ${guid} due to interval.`);
+            this.lastBroadcastTime.set(guid, currentTime); // Update the last broadcast time
             return;
+          } else {
+            this.lastBroadcastTime.set(guid, currentTime);
           }
         }
-        this.lastBroadcastTime.set(guid, currentTime);
       });
 
       const title = bans.length > 0 ? `🚨 Potential Ban Evasion Detected 🚨` : `Potential Alt Accounts Detected`;
+      var description = `**Server:** ${this.config.server.name}\n**📡 IP Address:** ${playerIP}`
+
+      if (bans.length > 0) {
+        // Get the oldest ban, which is at the end, and add to the description
+        const lastBan = bans[-1];
+        // now fetch the player name using the identifier of the ban
+        const bannedPlayerName = altAccounts.find((alt) => alt.beGUID === lastBan.identifier)?.playerName || "Unknown";
+        const link = lastBan.identifier ? `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${lastBan.identifier}&method=quick&redirect=1` : "No link available";
+
+        description += `\n\n**Oldest Ban:** ${bannedPlayerName}`
+        description += `\n**Reason:** ${lastBan.reason || "No reason provided"}`;
+        description += `\n**Expires At:** ${lastBan.expiresAt ? lastBan.expiresAt.toISOString() : "Never"}`;
+        description += `\n**Link:** ${link})`;
+      }
 
       const fields = [
         { name: "Usernames", value: [`${escapeMarkdown(playerName)}`, ...altAccounts.map((alt) => `${escapeMarkdown(alt.playerName) || "Unknown"}`)].join("\n"), inline: true },
@@ -215,37 +249,22 @@ class AltChecker {
         { name: "Online", value: ["Yes", ...altAccounts.map((alt) => (alt.online ? "Yes" : "No"))].join("\n"), inline: true }
       ]
 
-      if (bans.length > 0) {
-        if (bans.length < 3) {
-          fields.push({
-            name: "Bans",
-            value: bans.map((ban) => {
-              const reason = ban.reason || "No reason provided";
-              const expires = ban.expires ? new Date(ban.expires).toLocaleString() : "Permanent";
-              const note = ban.note ? `\n**Note:** ${ban.note.replace(/<\/?[^>]+(>|$)/g, "")}` : "";
-              return `**Reason:** ${reason}\n**Expires:** ${expires}${note}`;
-            }).join("\n\n"),
-            inline: false
-          });
-        } else {
-          // We don't have enough space to show all bans, so we just show the count
-          fields.push({
-            name: "Bans",
-            value: `**Total ban count:** ${bans.length}`
-          });
-        }
-      }
-
       if (this.logAlts) {
         const embed = new EmbedBuilder()
           .setTitle(title)
-          .setDescription(`**Server:** ${this.config.server.name}\n**📡 IP Address:** ${playerIP}`)
+          .setDescription(description)
           .setColor("#FFA500")
           .addFields(fields)
           .setFooter({ text: "EXD ReforgerJS customised by Bewilderbeest" });
 
         try {
           await this.channelOrThread.send({ embeds: [embed] });
+
+          if (this.roleNotificationId && bans.length > 0) {
+            const roleMention = `<@&${this.roleNotificationId}>`;
+            await this.channelOrThread.send(`${roleMention} Attention! Potential ban evasion detected by player **${escapeMarkdown(playerName)}** with IP **${playerIP}**. Please investigate.`);
+          }
+
           logger.info(`[${this.name}] Alt accounts detected and logged for IP: ${playerIP}`);
         } catch (error) {
           logger.error(`[${this.name}] Failed to send embed: ${error.message}`);

@@ -66,18 +66,7 @@ class BattlemetricsSync {
         ) {
           this.incrementalSyncIntervalMinutes = pluginConfig.incrementalSyncIntervalMinutes;
           logger.verbose(`[${this.name}] Set incremental sync interval to ${this.incrementalSyncIntervalMinutes} minutes from config.`);
-        }
-        
-        if (
-          pluginConfig.incrementalSyncIntervalMinutes !== undefined ||
-          typeof pluginConfig.incrementalSyncIntervalMinutes === "number" &&
-          pluginConfig.incrementalSyncIntervalMinutes > 0
-        ) {
-          this.incrementalSyncIntervalMinutes = pluginConfig.incrementalSyncIntervalMinutes;
-          logger.verbose(`[${this.name}] Set incremental sync interval to ${this.incrementalSyncIntervalMinutes} minutes from config.`); 
-        } else {
-          logger.verbose(`[${this.name}] Using default incremental sync interval of ${this.incrementalSyncIntervalMinutes} minutes.`);
-        }
+        }        
       }
 
       // TODO: We're actually using this less as a seaprate plugin, and more like a class because other classes call getBanByReforgerUUIDs directly

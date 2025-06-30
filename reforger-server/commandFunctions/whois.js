@@ -61,8 +61,18 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             let params;
             
             if (dbField === 'playerName') {
-                query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen FROM players WHERE ${dbField} LIKE ?`;
-                params = [`%${identifier}%`];
+                query = `
+                    SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen,
+                          CASE
+                              WHEN LOWER(playerName) = LOWER(?) THEN 1  -- Exact match
+                              WHEN LOWER(playerName) LIKE LOWER(?) THEN 2  -- Partial match
+                              ELSE 3  -- Other matches
+                          END AS rank
+                    FROM players
+                    WHERE LOWER(playerName) LIKE LOWER(?)
+                    ORDER BY rank, lastSeen DESC
+                `;
+                params = [identifier, `%${identifier}%`, `%${identifier}%`];
             } else {
                 query = `SELECT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen FROM players WHERE ${dbField} = ?`;
                 params = [identifier];
@@ -122,9 +132,11 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             if (bans && bans.length > 0) {
               logger.info(`[Whois Command] Found ${bans.length} bans for Reforger UUID: ${rows[0].playerUID}`);
               banDetails = bans.map((ban) => {
-                return `**Ban ID:** ${ban.id}\n` +
-                       `**Reason:** ${ban.reason || 'No reason provided'}\n` +
-                       `**Note:** ${ban.note || 'No note provided'}\n` +
+                const note = ban.note ? ban.note.replace(/<\/?[^>]+(>|$)/g, '') : '';
+                const noteTruncated = note.length > 100 ? note.substring(0, 100) + '...' : note;
+
+                return `**Reason:** ${ban.reason || 'No reason provided'}\n` +
+                       `**Note:** ${noteTruncated}\n` +
                        `**Expires At:** ${ban.expiresAt ? ban.expiresAt.toISOString() : 'Never'}\n`
               }).join('\n\n');
               banDetails = `**Bans for Reforger UUID ${rows[0].playerUID}:**\n\n` + banDetails;
