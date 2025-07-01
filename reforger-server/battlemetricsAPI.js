@@ -581,7 +581,7 @@ class BattleMetricsAPI {
         await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
       } while (url);
 
-      logger.info(`Fetched ${allBans.size} bans from BattleMetrics`);
+      // logger.info(`Fetched ${allBans.size} bans from BattleMetrics`);
       return allBans;
     } catch (error) {
       logger.error(`Error fetching BattleMetrics ban list: ${error.message}`);

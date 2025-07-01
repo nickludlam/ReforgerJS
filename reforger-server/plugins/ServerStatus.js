@@ -24,6 +24,8 @@ class ServerStatus {
     this.serverInstance = serverInstance;
     this.discordClient = discordClient;
 
+    this.serverInstance.on("gameCrashed", this.handleGameCrashed.bind(this));
+
     this.a2sAddress = this.config.server.host;
     if (!this.a2sAddress || !this.a2sAddress.trim()) {
       logger.error("ServerStatus plugin: Config entry 'server.address' is not configured or empty");
@@ -245,13 +247,22 @@ class ServerStatus {
     }
   }
 
+  async handleGameCrashed() {
+    logger.warn(`ServerStatus plugin: Game has crashed!`);
+  }
+
   async cleanup() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
       logger.verbose(`ServerStatus plugin: Cleanup - interval cleared`);
     }
-    this.serverInstance = null;
+
+    if (this.serverInstance) {
+      this.serverInstance.removeListener("gameGrashed", this.handleGameCrashed);
+      this.serverInstance = null;
+    }
+
     this.discordClient = null;
     this.channel = null;
     this.message = null;

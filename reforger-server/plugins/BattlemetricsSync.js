@@ -69,8 +69,8 @@ class BattlemetricsSync {
         }        
       }
 
-      // TODO: We're actually using this less as a seaprate plugin, and more like a class because other classes call getBanByReforgerUUIDs directly
-      // We might want to refactor this later to be more like a plugin, and getBanByReforgerUUIDs gets refactored out to be elsewhere
+      // TODO: We're actually using this less as a seaprate plugin, and more like a class because other classes call getBansByReforgerUUIDs directly
+      // We might want to refactor this later to be more like a plugin, and getBansByReforgerUUIDs gets refactored out to be elsewhere
 
       if (this.syncEnabled) {
         logger.info(`[${this.name}] Sync is enabled. Starting periodic sync...`);
@@ -221,14 +221,15 @@ class BattlemetricsSync {
       const batchSize = 500;
       const bansArray = Array.from(bansMap.values());
       const totalBans = bansArray.length;
-      logger.info(`[${this.name}] Found ${totalBans} bans to sync from Battlemetrics.`);
 
       connection = await process.mysqlPool.getConnection();
 
       if (!incremental) {
         // If this is a full sync, we should clear the existing bans first
-        logger.info(`[${this.name}] Performing full sync. Clearing existing bans in the database.`);
+        logger.info(`[${this.name}] Performing full sync. Clearing existing bans in the database and inserting ${totalBans} new bans.`);
         await connection.query(`TRUNCATE TABLE battlemetricsBans`);
+      } else {
+        logger.info(`[${this.name}] Incremental sync. Found ${totalBans} bans to sync from Battlemetrics.`);
       }
 
       // Now chunk the insert/replace operations into batches
@@ -283,8 +284,22 @@ class BattlemetricsSync {
   }
 
   // Now export a method to get a ban by reforgerUUID
-  async getBanByReforgerUUIDs(reforgerUUIDs) {
-    logger.verbose(`[${this.name}] Fetching bans by reforgerUUIDs: ${reforgerUUIDs}`);
+  async getBansByReforgerUUIDs(reforgerUUIDs) {
+    // check it's an array
+    if (!Array.isArray(reforgerUUIDs) || reforgerUUIDs.length === 0) {
+      logger.warn(`[${this.name}] Invalid reforgerUUIDs provided. Expected a non-empty array.`);
+      return [];
+    }
+
+    // Ensure all UUIDs are strings and trimmed
+    reforgerUUIDs = reforgerUUIDs.map(uuid => typeof uuid === 'string' ? uuid.trim() : '').filter(uuid => uuid.length > 0);
+    if (reforgerUUIDs.length === 0) {
+      logger.warn(`[${this.name}] No valid reforgerUUIDs provided after trimming.`);
+      return [];
+    }
+
+    // const printableReforgerUUIDs = reforgerUUIDs.map(uuid => uuid.slice(0, 8)).join(", ");
+    // logger.verbose(`[${this.name}] Fetching bans for ${reforgerUUIDs.length} reforgerUUIDs: ${printableReforgerUUIDs}`);
 
     // Check cache first
     const cachedBans = reforgerUUIDs.map(uuid => this.banCache.get(uuid)).filter(ban => ban);
@@ -303,7 +318,7 @@ class BattlemetricsSync {
       );
 
       if (rows.length === 0) {
-        logger.info(`[${this.name}] No bans found for reforgerUUIDs: ${missingUUIDs}`);
+        // logger.info(`[${this.name}] No bans found for reforgerUUIDs: ${missingUUIDs}`);
         return cachedBans;
       }
 

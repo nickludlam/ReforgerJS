@@ -580,7 +580,7 @@ class DBLogStats extends EventEmitter {
       logger.verbose(`[${this.name}] Skipped ${skippedFileCount} files that were not updated since last scan.`);
     }
 
-    logger.verbose(`[${this.name}] Collected stats for ${Object.keys(playerStatData).length} players.`);
+    // logger.verbose(`[${this.name}] Collected stats for ${Object.keys(playerStatData).length} players.`);
     return playerStatData;
   }
 

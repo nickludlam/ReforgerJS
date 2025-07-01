@@ -130,7 +130,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             const bmSteamURL = rows[0].steamID ? `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${rows[0].steamID}&method=quick&redirect=1` : null;
 
             var banDetails = '';
-            const bans = await bmSyncPlugin.getBanByReforgerUUIDs([rows[0].playerUID]);
+            const bans = await bmSyncPlugin.getBansByReforgerUUIDs([rows[0].playerUID]);
             if (bans && bans.length > 0) {
               logger.info(`[Whois Command] Found ${bans.length} bans for Reforger UUID: ${rows[0].playerUID}`);
               banDetails = bans.map((ban) => {

@@ -2,6 +2,7 @@ const { EmbedBuilder } = require("discord.js");
 const logger = require("../logger/logger");
 const { escapeMarkdown } = require('../../helpers');
 const BattlemetricsSync = require("./BattlemetricsSync");
+// const { classifyUserQueryInfo } = require("../../helpers");
 
 class AltChecker {
   constructor(config) {
@@ -26,6 +27,10 @@ class AltChecker {
     this.roleNotificationId = null; // If we should send a notification to the Discord team 
 
     this.battleMetricsSyncPlugin = null;
+
+    // this.steamAPIKey = null;
+    // this.vacBanCache = new Map(); // Cache for VAC bans
+    // this.vacBanCacheTTL = 48 * 60 * 60 * 100 // 48 hours
   }
 
   async prepareToMount(serverInstance, discordClient) {
@@ -88,6 +93,13 @@ class AltChecker {
         logger.warn(`[${this.name}] Bot does not have permission to send messages in the channel or thread. Plugin disabled.`);
         return;
       }
+
+      // if (pluginConfig.steamAPIKey) {
+      //   this.steamAPIKey = pluginConfig.steamAPIKey;
+      //   logger.info(`[${this.name}] Using provided Steam API key for VAC ban queries.`);
+      // } else {
+      //   logger.warn(`[${this.name}] No Steam API key provided. VAC ban queries will not be available.`);
+      // }
   
       this.serverInstance.removeListener("playerJoined", this.handlePlayerJoined);
       this.serverInstance.on("playerJoined", this.handlePlayerJoined.bind(this));
@@ -117,6 +129,183 @@ class AltChecker {
       }
     }
   }
+
+
+  // async querySteamAPIForVACBans(steamIDs) {
+  //   if (!this.steamAPIKey) {
+  //     logger.warn(`[${this.name}] No Steam API key provided. VAC ban query will not be performed.`);
+  //     return null;
+  //   }
+
+  //   // Validate the steamIDs array
+  //   if (!Array.isArray(steamIDs) || steamIDs.length === 0) {
+  //     logger.warn(`[${this.name}] No valid Steam IDs provided for VAC ban query.`);
+  //     return null;
+  //   }
+
+  //   // use classifyUserQueryInfo on each element of the array to ensure they are all valid steamIDs
+  //   const validSteamIDs = steamIDs.filter(steamID => {
+  //     const type = classifyUserQueryInfo(steamID);
+  //     if (type === 'steamID') {
+  //       return true;
+  //     } else {
+  //       logger.warn(`[${this.name}] Invalid Steam ID provided: ${steamID}. Expected format is 7656119[0-9]{10}.`);
+  //       return false;
+  //     }
+  //   });
+
+  //   if (validSteamIDs.length != steamIDs.length) {
+  //     logger.warn(`[${this.name}] Some Steam IDs were invalid and will be excluded from the query.`);
+  //   }
+
+  //   // First concatenate the steamIDs into a comma-separated string
+  //   const steamIDString = validSteamIDs.join(",");
+  //   logger.verbose(`[${this.name}] Querying Steam API for VAC bans for Steam IDs: ${steamIDString}`);
+
+  //   try {
+  //     const response = await fetch(`http://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=${this.steamAPIKey}&steamids=${steamIDString}`);
+  //     if (!response.ok) {
+  //       logger.error(`[${this.name}] Failed to fetch VAC ban data: ${response.statusText}`);
+  //       return null;
+  //     }
+  //     const data = await response.json();
+  //     if (!data || !data.players || data.players.length === 0) {
+  //       logger.warn(`[${this.name}] No VAC ban data found for Steam IDs: ${steamIDString}`);
+  //       return null;
+  //     } 
+
+  //     // The data structure looks like this:
+  //     // {
+  //     //  "players":[
+  //     //    {
+  //     //      "SteamId":"76561198410103743",
+  //     //      "CommunityBanned":false,
+  //     //      "VACBanned":false,
+  //     //      "NumberOfVACBans":0,
+  //     //      "DaysSinceLastBan":0,
+  //     //      "NumberOfGameBans":0,
+  //     //      "EconomyBan":"none"
+  //     //    }
+  //     //  ]
+  //     // }
+    
+  //     // Now filter the players array to only include those with more than 3 VAC bans or a recent ban
+  //     const vacBanData = data.players.map(player => {
+  //       return {
+  //         steamID: player.SteamId,
+  //         vacBanned: player.VACBanned,
+  //         numberOfVACBans: player.NumberOfVACBans,
+  //         daysSinceLastBan: player.DaysSinceLastBan,
+  //         numberOfGameBans: player.NumberOfGameBans,
+  //         economyBan: player.EconomyBan,
+  //         communityBanned: player.CommunityBanned
+  //       };
+  //     }).filter(player => {
+  //       // Our metric for reporting a True is whether they have more than 3 VAC bans,
+  //       // or the most recent ban is less than 365 days old
+  //       return player.vacBanned && (player.numberOfVACBans > 3 || player.daysSinceLastBan < 365);
+  //     });
+  //     if (vacBanData.length > 0) {
+  //       logger.info(`[${this.name}] Significant VAC bans detected for Steam IDs: ${steamIDString}`);
+  //       logger.info(`[${this.name}] VAC ban data: ${JSON.stringify(vacBanData)}`);
+  //     } else {
+  //       logger.info(`[${this.name}] No significant VAC bans detected for Steam IDs: ${steamIDString}`);
+  //     }
+
+  //     // Now the data structure looks like this:
+  //     // [
+  //     //   {
+  //     //     steamID: "76561198410103743",
+  //     //     vacBanned: true,
+  //     //     numberOfVACBans: 4,
+  //     //     daysSinceLastBan: 100,
+  //     //     numberOfGameBans: 0,
+  //     //     economyBan: "none",
+  //     //     communityBanned: false
+  //     //   },
+  //     //   ...
+  //     // ]
+
+  //     return vacBanData;
+  //   } catch (error) {
+  //     logger.error(`[${this.name}] Error querying Steam API for VAC bans: ${error.stack}`);
+  //     return null;
+  //   }
+  // }
+
+  // playerVACBansOverThreshold(vacBanObject) {
+  //   // A single VAC ban object of the form:
+  //   // {
+  //   //   steamID: "76561198410103743",
+  //   //   vacBanned: true,
+  //   //   numberOfVACBans: 4,
+  //   //   daysSinceLastBan: 100,
+  //   //   numberOfGameBans: 0,
+  //   //   economyBan: "none",
+  //   //   communityBanned: false
+  //   // }
+
+  //   // Check if the player has more than 3 VAC bans or the most recent ban is less than 365 days old
+  //   if (vacBanObject && (vacBanObject.numberOfGameBans > 3 || vacBanObject.daysSinceLastBan < 365)) {
+  //     return true;
+  //   }
+  //   return false;
+  // }
+
+  // // This will return true if the player has more than 3 VAC bans or the most recent ban is less than 365 days old
+  // async playersHasSignificantVACBans(steamIDArray) {
+  //   if (!this.steamAPIKey) {
+  //     return null;
+  //   }
+
+  //   // use classifyUserQueryInfo on each element of the array to ensure they are all valid steamIDs
+  //   const validSteamIDs = steamIDArray.filter(steamID => {
+  //     const type = classifyUserQueryInfo(steamID);
+  //     if (type === 'steamID') {
+  //       return true;
+  //     } else {
+  //       logger.warn(`[${this.name}] Invalid Steam ID provided: ${steamID}. Expected format is 7656119[0-9]{10}.`);
+  //       return false;
+  //     }
+  //   });
+
+  //   if (validSteamIDs.length === 0) {
+  //     logger.warn(`[${this.name}] No valid Steam IDs provided for VAC ban check.`);
+  //     return false;
+  //   }
+
+  //   var missingSteamIDs = validSteamIDs.filter(steamID => !this.vacBanCache.has(steamID));
+
+  //   if (missingSteamIDs.length > 0) {
+  //     logger.verbose(`[${this.name}] Missing Steam IDs in cache: ${missingSteamIDs.join(", ")}`);
+  //     // Query the Steam API for VAC bans
+  //     const vacBanData = await this.querySteamAPIForVACBans(missingSteamIDs);
+  //     if (!vacBanData) {
+  //       logger.warn(`[${this.name}] Failed to get VAC ban data from Steam API for Steam IDs: ${missingSteamIDs.join(", ")}`);
+  //     } else {
+  //       // Cache the VAC ban data
+  //       vacBanData.forEach(player => {
+  //         this.vacBanCache.set(player.steamID, player);
+  //         // Set a timeout to clear the cache entry after the TTL
+  //         setTimeout(() => this.vacBanCache.delete(player.steamID), this.vacBanCacheTTL);
+  //       });
+  //       logger.verbose(`[${this.name}] Cached VAC ban data for Steam IDs: ${missingSteamIDs.join(", ")}`);
+  //     }
+  //   } else {
+  //     // logger.verbose(`[${this.name}] All Steam IDs are already in cache: ${validSteamIDs.join(", ")}`);
+  //   }
+
+  //   const steamIDsWithSignificantBans = validSteamIDs.filter(steamID => {
+  //     const cachedData = this.vacBanCache.get(steamID);
+  //     if (cachedData && this.playerVACBansOverThreshold(cachedData)) {
+  //       logger.verbose(`[${this.name}] Significant VAC bans found for Steam ID: ${steamID}`);
+  //       return true;
+  //     }
+  //     return false;
+  //   });
+
+  //   return steamIDsWithSignificantBans;
+  // }
   
   async handlePlayerJoined(player) {
     try {
@@ -155,12 +344,29 @@ class AltChecker {
       if (this.playerIPCache.has(playerIP)) {
         logger.verbose(`[${this.name}] Cache hit for IP: ${playerIP}`);
       } else {
-        logger.verbose(`[${this.name}] Cache miss for IP: ${playerIP}. Querying database...`);
+        // logger.verbose(`[${this.name}] Cache miss for IP: ${playerIP}. Querying database...`);
         const [rows] = await process.mysqlPool.query("SELECT * FROM players WHERE playerIP = ?", [playerIP]);
         this.playerIPCache.set(playerIP, rows);
 
         // Set timeout to clear cache entry
         setTimeout(() => this.playerIPCache.delete(playerIP), this.playerIPCacheTTL);
+      }
+
+      const primaryAccount = this.playerIPCache.get(playerIP).find(
+        (dbPlayer) => dbPlayer.beGUID === beGUID
+      );
+
+      // Check if this player has an active ban
+      if (this.battleMetricsSyncPlugin && primaryAccount && primaryAccount.playerUID) {
+        const playerBans = await this.battleMetricsSyncPlugin.getBansByReforgerUUIDs([primaryAccount.playerUID]);
+        if (playerBans && playerBans.length > 0) {
+          // Filter to keep only permanent or active bans
+          const activeBans = playerBans.filter((ban) => ban.expiresAt === null || (ban.expiresAt && ban.expiresAt > new Date()));
+          if (activeBans.length > 0) {
+            logger.info(`[${this.name}] Player ${playerName} has one or more active bans. Skipping alt check.`);
+            return;
+          }
+        }
       }
 
       const altAccounts = this.playerIPCache.get(playerIP).filter(
@@ -176,12 +382,16 @@ class AltChecker {
 
       const bans = [];
       if (this.battleMetricsSyncPlugin) {
-        logger.verbose(`[${this.name}] Fetching bans for alt accounts of player ${playerName} with IP ${playerIP} using reforger UUIDs: ${reforgerIDs.join(", ")}`);
+        // logger.verbose(`[${this.name}] Fetching bans for alt accounts of player ${playerName} with IP ${playerIP} using reforger UUIDs: ${reforgerIDs.join(", ")}`);
         // Fetch bans for the reforger UUIDs
-        const fetchedBans = await this.battleMetricsSyncPlugin.getBanByReforgerUUIDs(reforgerIDs);
+        const fetchedBans = await this.battleMetricsSyncPlugin.getBansByReforgerUUIDs(reforgerIDs);
         if (fetchedBans && fetchedBans.length > 0) {
-          bans.push(...fetchedBans);
-          logger.info(`[${this.name}] Found ${fetchedBans.length} bans for alt accounts of player ${playerName} with IP ${playerIP}.`);
+          // Filter to keep only permanent or active bans
+          const activeBans = fetchedBans.filter((ban) => ban.expiresAt === null || (ban.expiresAt && ban.expiresAt > new Date()));
+          if (activeBans.length > 0) {
+            bans.push(...activeBans);
+            logger.info(`[${this.name}] Found ${activeBans.length} active bans for alt accounts of player ${playerName} with IP ${playerIP}.`);
+          }
         }
       } else {
         logger.warn(`[${this.name}] BattlemetricsSync plugin is not available. Cannot fetch bans for alt accounts.`);
@@ -232,14 +442,15 @@ class AltChecker {
 
       if (bans.length > 0) {
         // Get the oldest ban, which is at the end, and add to the description
-        const lastBan = bans[-1];
+        const oldestBan = bans[bans.length - 1];
         // now fetch the player name using the identifier of the ban
-        const bannedPlayerName = altAccounts.find((alt) => alt.beGUID === lastBan.identifier)?.playerName || "Unknown";
-        const link = lastBan.identifier ? `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${lastBan.identifier}&method=quick&redirect=1` : "No link available";
+        const bannedPlayerName = altAccounts.find((alt) => alt.reforgerIDs === oldestBan.identifier)?.playerName || "Unknown player name";
+        
+        const link = oldestBan.identifier ? `https://www.battlemetrics.com/rcon/players?filter%5Bsearch%5D=${oldestBan.identifier}&method=quick&redirect=1` : "No link available";
 
         description += `\n\n**Oldest Ban:** ${bannedPlayerName}`
-        description += `\n**Reason:** ${lastBan.reason || "No reason provided"}`;
-        description += `\n**Expires At:** ${lastBan.expiresAt ? lastBan.expiresAt.toISOString() : "Never"}`;
+        description += `\n**Reason:** ${oldestBan.reason || "No reason provided"}`;
+        description += `\n**Expires At:** ${oldestBan.expiresAt ? oldestBan.expiresAt.toISOString() : "Never"}`;
         description += `\n**Link:** ${link})`;
       }
 

@@ -56,42 +56,60 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
             );
             
             if (!playerExists.existsInDB) {
-                await interaction.editReply(`Player with UUID: ${playerUID} could not be found in the database.`);
+                await interaction.editReply(`Player with Reforger ID: ${playerUID} could not be found in the database.`);
                 return;
             }
             
             const [playerRow] = await pool.query(`SELECT playerName FROM players WHERE playerUID = ?`, [playerUID]);
             playerName = (playerRow.length > 0) ? playerRow[0].playerName : 'Unknown Player';
         } else {
-            const [matchingPlayers] = await pool.query(
-                `SELECT playerUID, playerName FROM players WHERE playerName LIKE ?`,
-                [`%${identifier}%`]
-            );
+            const query = `
+                SELECT DISTINCT playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen,
+                      CASE
+                          WHEN LOWER(playerName) = LOWER(?) THEN 1  -- Exact match
+                          WHEN LOWER(playerName) LIKE LOWER(?) THEN 2  -- Partial match
+                          ELSE 3  -- Other matches
+                      END AS matchRank
+                FROM players
+                WHERE LOWER(playerName) LIKE LOWER(?)
+                ORDER BY matchRank, lastSeen DESC
+            `;
+            const params = [identifier, `%${identifier}%`, `%${identifier}%`];
+            const [matchingPlayers] = await pool.query(query, params);
             
             if (matchingPlayers.length === 0) {
                 await interaction.editReply(`No players found with name containing: ${identifier}`);
                 return;
             } else if (matchingPlayers.length > 1) {
-                const displayCount = Math.min(matchingPlayers.length, 3);
+
+              // First check if the first element of the matchingPlayers array is an exact match to the provided identifier, including case sensitivity
+              if (matchingPlayers[0].playerName == identifier) {
+                playerUID = matchingPlayers[0].playerUID;
+                playerName = matchingPlayers[0].playerName;
+              } else {
+                const displayLimit = 4; // Limit the number of results displayed
+
+                const displayCount = Math.min(matchingPlayers.length, displayLimit);
                 let responseMessage = `Found ${matchingPlayers.length} players matching "${identifier}". `;
                 
-                if (matchingPlayers.length > 3) {
-                    responseMessage += `Showing first 3 results. Please refine your search or use a UUID instead.\n\n`;
+                if (matchingPlayers.length > displayCount) {
+                  responseMessage += `Showing first ${displayLimit} results. Please refine your search or use a Reforger ID instead.\n\n`;
                 } else {
-                    responseMessage += `Please use one of the following UUIDs for a specific player:\n\n`;
+                  responseMessage += `Please use one of the following Reforger IDs for a specific player:\n\n`;
                 }
                 
                 for (let i = 0; i < displayCount; i++) {
-                    const player = matchingPlayers[i];
-                    responseMessage += `${i+1}. ${player.playerName} - UUID: ${player.playerUID}\n`;
+                  const player = matchingPlayers[i];
+                  responseMessage += `${i+1}. ${player.playerName}  =>  Reforger ID: ${player.playerUID}\n`;
                 }
                 
                 await interaction.editReply(responseMessage);
                 return;
-            } else {
-                playerUID = matchingPlayers[0].playerUID;
-                playerName = matchingPlayers[0].playerName;
-            }
+              }
+          } else {
+            playerUID = matchingPlayers[0].playerUID;
+            playerName = matchingPlayers[0].playerName;
+          }
         }
 
         // Now we have playerUID and playerName
@@ -216,13 +234,13 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
         // Now check if the seeder role is assigned to the player by checking against the SeedTrackerBasic config key `discordSeederRoleId`
         const seederRoleId = serverInstance.config.plugins.find(p => p.plugin === 'SeedTrackerBasic')?.discordSeederRoleId;
         if (seederRoleId) {
-            const guild = await discordClient.guilds.fetch(serverInstance.config.connectors.discord.guildId);
-            const member = await guild.members.fetch(user.id);
-            if (member && member.roles.cache.has(seederRoleId)) {
-                stats.isSeeder = true;
-            } else {
-                stats.isSeeder = false;
-            }
+          const guild = await discordClient.guilds.fetch(serverInstance.config.connectors.discord.guildId);
+          const member = await guild.members.fetch(user.id);
+          if (member && member.roles.cache.has(seederRoleId)) {
+              stats.isSeeder = true;
+          } else {
+              stats.isSeeder = false;
+          }
         }
 
         const fields = [
@@ -264,7 +282,7 @@ module.exports = async (interaction, serverInstance, discordClient, extraData = 
 
         const embed = new EmbedBuilder()
             .setTitle("📊 Player Stats" + titleSuffix)
-            .setDescription(`**User:** ${escapeMarkdown(playerName)}\n**UUID:** ${playerUID}\n---------------\n`)
+            .setDescription(`**User:** ${escapeMarkdown(playerName)}\n**Reforger ID:** ${playerUID}\n---------------\n`)
             .setColor("#FFA500")
             .setFooter({ text: "Stats collected by ReforgerJS" })
             .addFields(fields);
