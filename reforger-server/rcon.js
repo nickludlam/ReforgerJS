@@ -116,7 +116,7 @@ class Rcon extends EventEmitter {
         }, 5000);
   
         this.client.sendCommand("players");
-        logger.info('Sent "players" command...');
+        // logger.info('Sent "players" command...');
       } else {
         logger.warn(
           'RCON not logged in or in error state; skipping "players" command.'
@@ -171,7 +171,7 @@ sendCustomCommand(command) {
       this.players.push(newPlayer);
     }
     
-    const timeout = 120000;
+    const timeout = 120000; // 2 minutes in milliseconds
     this.players = this.players.filter(player => 
       (currentTime - (player.lastSeen || 0)) < timeout
     );
@@ -185,7 +185,7 @@ sendCustomCommand(command) {
   finalizePlayers() {
     this.mergePlayerLists(this.observedPlayers);
     //logger.verbose(`Final player list: ${JSON.stringify(this.players, null, 2)}`);
-  logger.verbose(`Player count: ${this.players.length}`);
+    // logger.verbose(`RCON player count: ${this.players.length}`);
 
     this.emit("players", this.players);
 

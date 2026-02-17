@@ -3,6 +3,38 @@ const { Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
+async function cacheCurrentCommands(cacheFilePath, commands) {
+  try {
+    const dir = path.dirname(cacheFilePath);
+    if (!fs.existsSync(dir)) {
+      await fs.promises.mkdir(dir, { recursive: true });
+    }
+    await fs.promises.writeFile(cacheFilePath, JSON.stringify(commands, null, 2));
+    logger.verbose('Commands cached successfully.');
+  } catch (error) {
+    logger.error(`Error caching commands: ${error.message}`);
+  }
+}
+
+async function commandsHaveChanged(cacheFilePath, commands) {
+  try {
+    const cachedData = await fs.promises.readFile(cacheFilePath, 'utf8');
+    const cachedCommands = JSON.parse(cachedData);
+
+    if (JSON.stringify(commands) !== JSON.stringify(cachedCommands)) {
+      logger.verbose('Commands have changed. Updating cache...');
+      await fs.promises.writeFile(cacheFilePath, JSON.stringify(commands, null, 2));
+      return true;
+    }
+  } catch (error) {
+    logger.warn(`Cache file not found or invalid: ${error.message}`);
+    return true;
+  }
+
+  logger.verbose('No changes detected in commands.');
+  return false;
+}
+
 async function deployCommands(config, logger, discordClient = null) {
     if (!config || !logger) {
         console.error('Missing required parameters: config and logger must be provided');
@@ -26,14 +58,9 @@ async function deployCommands(config, logger, discordClient = null) {
             return false;
         }
 
-        const rest = new REST({ version: '10' }).setToken(discordConfig.token);
-
-        logger.info('Clearing existing commands...');
-        await rest.put(
-            Routes.applicationGuildCommands(discordConfig.clientId, discordConfig.guildId),
-            { body: [] }
-        );
-        logger.info('Successfully cleared existing commands.');
+        const cacheFilePath = config.server?.commandCachePath
+            ? path.resolve(config.server.commandCachePath)
+            : null;
 
         const commandsPath = path.resolve(process.cwd(), './reforger-server/commands');
         const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
@@ -50,6 +77,20 @@ async function deployCommands(config, logger, discordClient = null) {
             }
         }
 
+        if (cacheFilePath && !await commandsHaveChanged(cacheFilePath, commands)) {
+            logger.info('No changes detected in commands. Skipping deployment.');
+            return false;
+        }
+
+        const rest = new REST({ version: '10' }).setToken(discordConfig.token);
+
+        logger.info('Clearing existing commands...');
+        await rest.put(
+            Routes.applicationGuildCommands(discordConfig.clientId, discordConfig.guildId),
+            { body: [] }
+        );
+        logger.info('Successfully cleared existing commands.');
+
         if (commands.length > 0) {
             logger.info('Deploying commands...');
             await rest.put(
@@ -62,6 +103,7 @@ async function deployCommands(config, logger, discordClient = null) {
                 logger.verbose('Refreshing Discord client command cache...');
                 await discordClient.application.commands.fetch();
                 logger.verbose('Discord command cache refreshed.');
+                if (cacheFilePath) await cacheCurrentCommands(cacheFilePath, commands);
             }
         } else {
             logger.warn('No commands to deploy. All commands are disabled in config.');

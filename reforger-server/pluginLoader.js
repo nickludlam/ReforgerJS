@@ -48,6 +48,15 @@ async function mountPlugins(plugins, serverInstance, discordClient) {
             if (typeof pluginInstance.prepareToMount === 'function') {
                 // Pass the serverInstance and discordClient so plugin can access them
                 await pluginInstance.prepareToMount(serverInstance, discordClient);
+
+                // Now check to see if the plugin has any emittedEvents, and if so, register them for rebroadcast
+                // by the serverInstance
+                if (pluginInstance.emittedEvents && Array.isArray(pluginInstance.emittedEvents)) {
+                    for (const event of pluginInstance.emittedEvents) {
+                        serverInstance.registerPluginEvent(event, pluginInstance);
+                    }
+                }
+
             }
             logger.info(`Plugin mounted successfully: ${pluginInstance.name || 'Unnamed Plugin'}`);
         } catch (error) {

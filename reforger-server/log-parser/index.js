@@ -1,6 +1,5 @@
 const EventEmitter = require('events');
 const async = require('async');
-const moment = require('moment');
 const TailLogReader = require('./log-readers/tail');
 const SFTPLogReader = require('./log-readers/sftp');
 const FTPLogReader = require('./log-readers/ftp');
@@ -53,6 +52,7 @@ class LogParser extends EventEmitter {
       const VoteKickStartHandler = require('./regexHandlers/voteKickStart');
       const VoteKickVictimHandler = require('./regexHandlers/voteKickVictim');
       const PlayerJoinedHandler = require('./regexHandlers/playerJoined');
+      const PlayerDisconnectedHandler = require('./regexHandlers/playerDisconnected');
       const PlayerUpdateHandler = require('./regexHandlers/playerUpdate');
       const ServerHealthHandler = require('./regexHandlers/serverHealth');
       const GameStartHandler = require('./regexHandlers/gameStart');
@@ -65,10 +65,13 @@ class LogParser extends EventEmitter {
       const GMToolsStatusHandler = require('./regexHandlers/GMToolsStatus');
       const GMToolsTimeHandler = require('./regexHandlers/GMToolsTime');
       const FlabbyChatLogsHandler = require('./regexHandlers/FlabbyChatLogs');
+      const GameCrashedHandler = require('./regexHandlers/gameCrashed');
+      const ServerStartHandler = require('./regexHandlers/serverStart');
 
       this.voteKickStartHandler = new VoteKickStartHandler();
       this.voteKickVictimHandler = new VoteKickVictimHandler();
       this.playerJoinedHandler = new PlayerJoinedHandler();
+      this.playerDisconnectedHandler = new PlayerDisconnectedHandler();
       this.playerUpdateHandler = new PlayerUpdateHandler();
       this.serverHealthHandler = new ServerHealthHandler();
       this.gameStartHandler = new GameStartHandler();
@@ -81,12 +84,15 @@ class LogParser extends EventEmitter {
       this.gmToolsStatusHandler = new GMToolsStatusHandler();
       this.gmToolsTimeHandler = new GMToolsTimeHandler();
       this.flabbyChatLogsHandler = new FlabbyChatLogsHandler();
+      this.gameCrashedHandler = new GameCrashedHandler();
+      this.serverStartHandler = new ServerStartHandler();
 
       this.removeAllListeners();
 
       this.voteKickStartHandler.on('voteKickStart', data => this.emit('voteKickStart', data));
       this.voteKickVictimHandler.on('voteKickVictim', data => this.emit('voteKickVictim', data));
       this.playerJoinedHandler.on('playerJoined', data => this.emit('playerJoined', data));
+      this.playerDisconnectedHandler.on('playerDisconnected', data => this.emit('playerDisconnected', data));
       this.playerUpdateHandler.on('playerUpdate', data => this.emit('playerUpdate', data));
       this.serverHealthHandler.on('serverHealth', data => this.emit('serverHealth', data));
       this.gameStartHandler.on('gameStart', data => this.emit('gameStart', data));
@@ -99,12 +105,37 @@ class LogParser extends EventEmitter {
       this.gmToolsStatusHandler.on('gmToolsStatus', data => this.emit('gmToolsStatus', data));
       this.gmToolsTimeHandler.on('gmToolsTime', data => this.emit('gmToolsTime', data));
       this.flabbyChatLogsHandler.on('chatMessage', data => this.emit('chatMessage', data));
+      this.gameCrashedHandler.on('gameCrashed', data => this.emit('gameCrashed', data));
+      this.serverStartHandler.on('serverStart', data => this.emit('serverStart', data));
     } catch (error) {
       logger.error(`Error setting up regex handlers: ${error.message}`);
     }
   }
 
   processLine(line) {
+    // High-frequency handlers first for performance
+    if (this.serverHealthHandler && this.serverHealthHandler.test(line)) {
+      this.serverHealthHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+
+    if (this.playerJoinedHandler && this.playerJoinedHandler.test(line)) {
+      this.playerJoinedHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+    if (this.playerDisconnectedHandler && this.playerDisconnectedHandler.test(line)) {
+      this.playerDisconnectedHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+    if (this.playerUpdateHandler && this.playerUpdateHandler.test(line)) {
+      this.playerUpdateHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+
     if (this.voteKickStartHandler && this.voteKickStartHandler.test(line)) {
       this.voteKickStartHandler.processLine(line);
       this.matchingLinesPerMinute++;
@@ -115,21 +146,7 @@ class LogParser extends EventEmitter {
       this.matchingLinesPerMinute++;
       return;
     }
-    if (this.playerJoinedHandler && this.playerJoinedHandler.test(line)) {
-      this.playerJoinedHandler.processLine(line);
-      this.matchingLinesPerMinute++;
-      return;
-    }
-    if (this.playerUpdateHandler && this.playerUpdateHandler.test(line)) {
-      this.playerUpdateHandler.processLine(line);
-      this.matchingLinesPerMinute++;
-      return;
-    }
-    if (this.serverHealthHandler && this.serverHealthHandler.test(line)) {
-      this.serverHealthHandler.processLine(line);
-      this.matchingLinesPerMinute++;
-      return;
-    }
+    
     if (this.gameStartHandler && this.gameStartHandler.test(line)) {
       this.gameStartHandler.processLine(line);
       this.matchingLinesPerMinute++;
@@ -177,6 +194,18 @@ class LogParser extends EventEmitter {
     }
     if (this.flabbyChatLogsHandler && this.flabbyChatLogsHandler.test(line)) {
       this.flabbyChatLogsHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+
+    if (this.serverStartHandler && this.serverStartHandler.test(line)) {
+      this.serverStartHandler.processLine(line);
+      this.matchingLinesPerMinute++;
+      return;
+    }
+
+    if (this.gameCrashedHandler && this.gameCrashedHandler.test(line)) {
+      this.gameCrashedHandler.processLine(line);
       this.matchingLinesPerMinute++;
       return;
     }

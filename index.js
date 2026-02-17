@@ -1,13 +1,13 @@
 // index.js
 const fs = require('fs');
 const path = require('path');
-const express = require('express');
 const { printLogo } = require('./reforger-server/utils/logo');
 const { validateConfig, performStartupChecks } = require('./reforger-server/factory');
 const { loadPlugins, mountPlugins } = require('./reforger-server/pluginLoader');
 const logger = require('./reforger-server/logger/logger');
 const deployCommands = require('./deploy-commands');
 const { checkVersion } = require('./reforger-server/utils/versionChecker');
+const BattleMetrics = require('./reforger-server/battlemetrics');
 
 function loadConfig(filePath) {
     try {
@@ -60,6 +60,15 @@ async function main() {
             logger.verbose('Skipping command reload on startup (reloadCommandsOnStartup is disabled).');
         }
 
+        // 3.5) Reload Discord commands if necessary
+        logger.info(`Checking for Discord command changes...`);
+        const success = await deployCommands(config, logger, discordClient);
+        if (success) {
+            logger.info('Discord commands successfully reloaded.');
+        } else {
+            logger.info('Discord commands were not reloaded.');
+        }
+
         // 4) Create and initialize ReforgerServer
         const ReforgerServer = require('./reforger-server/main');
         const serverInstance = new ReforgerServer(config);
@@ -68,6 +77,7 @@ async function main() {
 
         // 5) Load plugins
         const loadedPlugins = await loadPlugins(config);
+        serverInstance.pluginInstances = loadedPlugins;
 
         // 6) Mount plugins with the server instance and Discord client
         await mountPlugins(loadedPlugins, serverInstance, discordClient);
@@ -82,7 +92,7 @@ async function main() {
         discordClient.on('interactionCreate', async (interaction) => {
             try {
                 if (interaction.isCommand()) {
-                    const commandName = interaction.commandName;
+                    // commandName is accessed via interaction in handleCommand
                     const extraData = {};
                     
                     if (interaction.options && interaction.options._hoistedOptions) {
@@ -120,6 +130,16 @@ async function main() {
             if (discordClient) await discordClient.destroy();
             process.exit(0);
         });
+
+        // 9) Instantiate the BattleMetrics class, and assign to process.battleMetrics
+        try {
+          const battleMetricsInstance = new BattleMetrics(config);
+          await battleMetricsInstance.validateCredentials(serverInstance);
+          process.battleMetrics = battleMetricsInstance;
+        } catch (error) {
+          logger.error(`Error initializing BattleMetrics: ${error.message}`);
+        }
+
     } catch (error) {
         logger.error(`An error occurred: ${error.message}`);
         process.exit(1);

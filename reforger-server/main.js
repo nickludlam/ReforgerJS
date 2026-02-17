@@ -3,10 +3,13 @@ const Rcon = require("./rcon");
 const LogParser = require("./log-parser/index");
 const fs = require("fs");
 const path = require("path");
+const logger = require("./logger/logger");
 
 global.serverPlayerCount = 0;
 global.serverFPS = 0;
 global.serverMemoryUsage = 0;
+global.serverLastGameStartTime = null;
+global.serverDataLastUpdatedAt = null;
 
 class ReforgerServer extends EventEmitter {
   constructor(config) {
@@ -23,6 +26,7 @@ class ReforgerServer extends EventEmitter {
     this.initialReconnectDelay = 5000;
     this.maxReconnectDelay = 60000;
     this.currentReconnectDelay = this.initialReconnectDelay;
+    this.pluginInstances = [];
   }
 
   setupRCON() {
@@ -118,9 +122,16 @@ class ReforgerServer extends EventEmitter {
       global.serverFPS = data.fps;
       global.serverMemoryUsage = data.memory;
       global.serverPlayerCount = data.player;
-      const memoryMB = (global.serverMemoryUsage / 1024).toFixed(2);
+      global.serverDataLastUpdatedAt = Date.now();
+      // const memoryMB = (global.serverMemoryUsage / 1024).toFixed(2);
       //logger.verbose(`Server Health updated: FPS: ${global.serverFPS}, Memory: ${global.serverMemoryUsage} kB (${memoryMB} MB), Player Count: ${global.serverPlayerCount}`);
     });
+
+    this.logParser.on("serverStart", (data) => {
+      logger.info(`Server started at ${data.time}`);
+      this.emit("serverStart", data);
+    });
+
     this.setupGameStateEventHandlers();
     this.setupSATEventHandlers();
     this.setupGMToolsEventHandlers();
@@ -256,17 +267,14 @@ class ReforgerServer extends EventEmitter {
     });
 
     this.logParser.on("voteKickVictim", (data) => {
-      logger.info(
-        `Vote kick succeeded against player '${data.voteVictimName}' (ID: ${data.voteVictimId})`
-      );
+      logger.info(`Vote kick succeeded against player '${data.voteVictimName}' (ID: ${data.voteVictimId})`);
       this.emit("voteKickVictim", data);
     });
   }
 
   setupPlayerEventHandlers() {
     this.logParser.on("playerJoined", (data) => {
-      const { playerName, playerIP, playerNumber, beGUID, steamID, device } =
-        data;
+      const { playerName, playerIP, playerNumber, beGUID, steamID, device } = data;
       if (this.rcon) {
         const existing = this.rcon.players.find((p) => p.name === playerName);
         if (existing) {
@@ -286,13 +294,55 @@ class ReforgerServer extends EventEmitter {
           this.rcon.players.push(newPlayer);
         }
       }
-      logger.verbose(
-        `Player joined: ${playerName} (#${playerNumber}) from ${playerIP} - Device: ${
-          device || "Unknown"
-        }, SteamID: ${steamID || "None"}, BE GUID: ${beGUID || "Unknown"}`
-      );
+      logger.verbose(`Player joined: ${playerName} (#${playerNumber}) from ${playerIP} - Device: ${device || 'Unknown'}, SteamID: ${steamID || 'None'}, BE GUID: ${beGUID || 'Unknown'}`);
       this.emit("playerJoined", data);
     });
+
+    // Emitted playerDisconnected event data structure example:
+    // {
+    //    name: "Player1",
+    //    number: 1,
+    //    ip: "1.2.3.4",
+    //    uid: "1234567890abcdef",
+    //    beGUID: "1234567890abcdef",
+    //    steamID: "76561198012345678",
+    //    device: "PC"
+    // }
+    
+    this.logParser.on("playerDisconnected", (data) => {
+      const { playerName } = data;
+      if (this.rcon) {
+        const playerIndex = this.rcon.players.findIndex((p) => p.name === playerName);
+        if (playerIndex !== -1) {
+          const player = this.rcon.players[playerIndex];
+          // add the player information to data
+          data.name = player.name || null;
+          data.number = player.number || null;
+          data.ip = player.ip || null;
+          data.uid = player.uid || null;
+          data.beGUID = player.beGUID || null;
+          data.steamID = player.steamID || null;
+          data.device = player.device || null;
+        } else {
+          logger.warn(`Player disconnected but not found in RCON players list: ${playerName}`);
+        }
+      } else {
+        logger.warn(`Player disconnected but RCON is not initialized: ${playerName}`);
+      }
+      logger.verbose(`Player disconnected: ${playerName}`);
+      this.emit("playerDisconnected", data);
+    });
+
+    // Emitted playerUpdate event data structure example:
+    // {
+    //    name: "Player1",
+    //    number: 1,
+    //    ip: "1.2.3.4",
+    //    uid: "1234567890abcdef",
+    //    beGUID: "1234567890abcdef",
+    //    steamID: "76561198012345678",
+    //    device: "PC"
+    // }
 
     this.logParser.on("playerUpdate", (data) => {
       if (this.rcon) {
@@ -300,15 +350,22 @@ class ReforgerServer extends EventEmitter {
           (p) => p.name === data.playerName
         );
         if (existing) {
-          let updated = false;
           if (!existing.id && data.playerId) {
             existing.id = parseInt(data.playerId, 10);
-            updated = true;
           }
           if (!existing.uid && data.playerUid) {
             existing.uid = data.playerUid;
-            updated = true;
           }
+          // it comes with time, playerId, playerName, playerUid
+          // We convert them to the existing player object
+
+          data.name = data.playerName || existing.name || null;
+          data.uid = existing.uid || null;
+          data.ip = existing.ip || null;
+          data.beGUID = existing.beGUID || null;
+          data.steamID = existing.steamID || null;
+          data.device = existing.device || null;
+
         } else {
           if (data.playerName && data.playerId && data.playerUid) {
             this.rcon.players.push({
@@ -337,9 +394,7 @@ class ReforgerServer extends EventEmitter {
     });
 
     this.logParser.on("playerKilled", (data) => {
-      logger.verbose(
-        `ServerAdminTools Player killed: ${data.playerName} by ${data.instigatorName}, friendly fire: ${data.friendlyFire}`
-      );
+      logger.verbose(`ServerAdminTools Player killed: ${data.playerName} by ${data.instigatorName}, friendly fire: ${data.friendlyFire}`);
 
       const payload = {
         time: data.time,
@@ -352,25 +407,19 @@ class ReforgerServer extends EventEmitter {
       this.emit("satPlayerKilled", payload);
 
       if (data.friendlyFire) {
-        logger.info(
-          `ServerAdminTools Friendly fire: ${data.instigatorName} killed ${data.playerName}`
-        );
+        logger.info(`ServerAdminTools Friendly fire: ${data.instigatorName} killed ${data.playerName}`);
         this.emit("satFriendlyFire", payload);
       }
     });
 
     this.logParser.on("adminAction", (data) => {
-      logger.info(
-        `Admin action: ${data.action} by ${data.adminName} on player ${data.targetPlayer}`
-      );
+      logger.info(`Admin action: ${data.action} by ${data.adminName} on player ${data.targetPlayer}`);
       this.emit("adminAction", data);
     });
 
     this.logParser.on("gameEnd", (data) => {
       if (data.reason && data.winner) {
-        logger.info(
-          `ServerAdminTools Game ended: Reason: ${data.reason}, Winner: ${data.winner}`
-        );
+        logger.info(`ServerAdminTools Game ended: Reason: ${data.reason}, Winner: ${data.winner}`);
         this.emit("satGameEnd", data);
       }
     });
@@ -378,18 +427,12 @@ class ReforgerServer extends EventEmitter {
 
   setupGMToolsEventHandlers() {
     this.logParser.on("gmToolsStatus", (data) => {
-      logger.info(
-        `GM Tools: Player ${data.playerName} (ID: ${data.playerId}) ${
-          data.status === "Enter" ? "entered" : "exited"
-        } Game Master mode`
-      );
+      logger.info(`GM Tools: Player ${data.playerName} (ID: ${data.playerId}) ${data.status === "Enter" ? "entered" : "exited"} Game Master mode`);
       this.emit("gmToolsStatus", data);
     });
 
     this.logParser.on("gmToolsTime", (data) => {
-      logger.verbose(
-        `GM Tools: Session duration for ${data.playerName} (ID: ${data.playerId}): ${data.duration} seconds`
-      );
+      logger.verbose(`GM Tools: Session duration for ${data.playerName} (ID: ${data.playerId}): ${data.duration} seconds`);
       this.emit("gmToolsTime", data);
     });
   }
@@ -397,9 +440,7 @@ class ReforgerServer extends EventEmitter {
   setupFlabbyChatEventHandlers() {
     this.logParser.on("chatMessage", (data) => {
       const channelType = this.getChatChannelType(data.channelId);
-      logger.verbose(
-        `Chat: [${channelType}] ${data.playerName}: ${data.message}`
-      );
+      logger.verbose(`Chat: [${channelType}] ${data.playerName}: ${data.message}`);
 
       this.emit("chatMessage", {
         time: data.time,
@@ -417,18 +458,12 @@ class ReforgerServer extends EventEmitter {
 
   getChatChannelType(channelId) {
     switch (channelId) {
-      case "0":
-        return "Global";
-      case "1":
-        return "Faction";
-      case "2":
-        return "Group";
-      case "3":
-        return "Vehicle";
-      case "4":
-        return "Local";
-      default:
-        return "Unknown";
+      case "0": return "Global";
+      case "1": return "Faction";
+      case "2": return "Group";
+      case "3": return "Vehicle";
+      case "4": return "Local";
+      default: return "Unknown";
     }
   }
 
@@ -436,6 +471,7 @@ class ReforgerServer extends EventEmitter {
     // Game Start event
     this.logParser.on("gameStart", (data) => {
       logger.info(`Game started at ${data.time}`);
+      global.serverLastGameStartTime = data.time;
       this.emit("gameStart", data);
     });
 
@@ -452,6 +488,14 @@ class ReforgerServer extends EventEmitter {
     });
   }
 
+  // Listen to the pluginInstance for an event and re-emit it
+  registerPluginEvent(event, pluginInstance) {
+    pluginInstance.on(event, (data) => {
+      logger.verbose(`Rebroadcasting event '${event}' from plugin '${pluginInstance.name || 'Unnamed Plugin'}'`);
+      this.emit(event, data);
+    });
+  }
+
   handleRconDisconnection() {
     if (this.isReconnecting) {
       return;
@@ -465,8 +509,8 @@ class ReforgerServer extends EventEmitter {
   processVoteKickStartBuffer() {
     const currentTime = Date.now();
 
-    this.voteKickStartBuffer = this.voteKickStartBuffer.filter((event) => {
-      return currentTime - event.timestamp < 1800000;
+    this.voteKickStartBuffer = this.voteKickStartBuffer.filter(event => {
+      return (currentTime - event.time) < 1800000;
     });
 
     logger.verbose(

@@ -1,10 +1,10 @@
-// log-parser/regexHandlers/playerUpdate.js
+const { parseLogDate } = require('../../../helpers');
 const { EventEmitter } = require('events');
 
 class PlayerUpdateHandler extends EventEmitter {
     constructor() {
         super();
-        this.regex = /(\d{2}:\d{2}:\d{2}\.\d{3})\s+NETWORK\s+:\s+### Updating player: PlayerId=(\d+), Name=(.*?), IdentityId=([a-f0-9-]+)/;
+        this.regex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+NETWORK\s+:\s+### Updating player: PlayerId=(\d+), Name=(.*?), IdentityId=([a-f0-9-]+)/;
     }
 
     test(line) {
@@ -14,7 +14,7 @@ class PlayerUpdateHandler extends EventEmitter {
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {
-            const time = match[1];
+            const time = parseLogDate(match[1]);
             const playerId = match[2];
             const playerName = match[3].trim();
             const playerUid = match[4];

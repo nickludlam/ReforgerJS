@@ -22,12 +22,14 @@
       "port": 21,
       "user": "FTP Username",
       "password": "FTP Password"
-    }
+    },
+    "commandCachePath": "/path/to/commands-cache.json"
   },
   "customParsers": {
   },
   "consoleLogLevel": "info",
   "outputLogLevel": "info",
+  "outputLogsDir": "./logs",
   "connectors": {
     "discord": {
       "token": "",
@@ -87,12 +89,18 @@
       "ban": 3,
       "shutdown": 3,
       "restart": 3,
-      "kick": 3
+      "kick": 3,
+      "whois": 3
     },
     {
       "command": "reload",
       "enabled": false,
       "commandLevel": 1
+    },
+    {
+      "command": "evidence",
+      "enabled": false,
+      "commandLevel": 2
     }
   ],
   "plugins": [
@@ -105,6 +113,10 @@
       "plugin": "LogVoteKickStart",
       "enabled": false,
       "channel": ""
+    },
+    {
+      "plugin": "VoteLogs",
+      "enabled": true
     },
     {
       "plugin": "DBLog",
@@ -120,7 +132,8 @@
       "enabled": false,
       "interval": 5,
       "path": "C:/path/to/saves/profile/.save/playersave",
-      "tableName": ""
+      "tableName": "",
+      "serverName": "serverName"
     },
     {
       "plugin": "SeedTrackerBasic",
@@ -134,7 +147,12 @@
       "enabled": false,
       "channel": "",
       "logAlts": true,
-      "logOnlyOnline": false
+      "logOnlyOnline": false,
+      "whitelistBEGUIDs": []
+    },
+    {
+      "plugin": "EXDLeague",
+      "enabled": true
     },
     {
       "plugin": "ServerStatus",

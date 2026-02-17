@@ -1,10 +1,10 @@
-// log-parser/regexHandlers/gameEnd.js
+const { parseLogDate } = require('../../../helpers');
 const { EventEmitter } = require('events');
 
 class GameEndHandler extends EventEmitter {
     constructor() {
         super();
-        this.regex = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+SCRIPT\s+:\s+SCR_BaseGameMode::OnGameStateChanged\s+=\s+POSTGAME/;
+        this.regex = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+SCRIPT\s+:\s+SCR_BaseGameMode::OnGameStateChanged\s+=\s+POSTGAME/;
     }
 
     test(line) {
@@ -14,7 +14,7 @@ class GameEndHandler extends EventEmitter {
     processLine(line) {
         const match = this.regex.exec(line);
         if (match) {
-            const time = match[1];
+            const time = parseLogDate(match[1]);
             this.emit('gameEnd', { time });
         }
     }

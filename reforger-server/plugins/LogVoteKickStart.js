@@ -62,10 +62,18 @@ class LogVoteKickStart {
       }
 
       this.serverInstance.on("voteKickStart", this.handleVoteKickStart.bind(this));
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error initializing LogVoteKickStart plugin: ${error.message}`);
+    }
   }
 
   async handleVoteKickStart(data) {
+    // If it's more than 60 seconds old, ignore it
+    if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 60000) {
+      return;
+    }
+
+    // Use new properties, with fallbacks if missing
     const voteOffenderName = data?.voteOffenderName || "Missing Value";
     const voteOffenderId = data?.voteOffenderId || "Missing Id";
     const voteVictimName = data?.voteVictimName || "Missing Value";
@@ -82,12 +90,14 @@ class LogVoteKickStart {
       )
       .setColor("#FFA500")
       .setFooter({
-        text: "VoteKickStart plugin - ReforgerJS",
+        text: "EXD ReforgerJS customised by Bewilderbeest",
       });
 
     try {
       await this.channelOrThread.send({ embeds: [embed] });
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error sending vote kick start message: ${error.message}`);
+    }
   }
 
   async cleanup() {

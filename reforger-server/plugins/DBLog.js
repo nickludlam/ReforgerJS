@@ -1,4 +1,70 @@
-const mysql = require("mysql2/promise");
+const logger = require("../logger/logger");
+
+// Async-safe Queue implementation for player updates
+class PlayerUpdateQueue {
+  constructor(maxSize = 100) {
+    this.queue = [];
+    this.maxSize = maxSize;
+    this.processing = false;
+    this.lock = Promise.resolve(); // Used as a mutex lock
+  }
+
+  // Add item to the queue in a thread-safe way
+  async enqueue(item) {
+    // Wait for any ongoing operations to complete
+    await this.lock;
+    
+    // Create a new lock
+    let unlockNext;
+    this.lock = new Promise(resolve => {
+      unlockNext = resolve;
+    });
+
+    try {
+      this.queue.push(item);
+      return this.queue.length >= this.maxSize;
+    } finally {
+      // Release the lock
+      unlockNext();
+    }
+  }
+
+  // Get and remove all items from the queue
+  async dequeueAll() {
+    await this.lock;
+    
+    let unlockNext;
+    this.lock = new Promise(resolve => {
+      unlockNext = resolve;
+    });
+
+    try {
+      const items = [...this.queue];
+      this.queue = [];
+      return items;
+    } finally {
+      unlockNext();
+    }
+  }
+
+  // Check queue size
+  async size() {
+    await this.lock;
+    return this.queue.length;
+  }
+
+  // Check if queue is full
+  async isFull() {
+    await this.lock;
+    return this.queue.length >= this.maxSize;
+  }
+
+  // Check if queue is empty
+  async isEmpty() {
+    await this.lock;
+    return this.queue.length === 0;
+  }
+}
 
 class DBLog {
   constructor(config) {
@@ -6,6 +72,7 @@ class DBLog {
     this.name = "DBLog Plugin";
     this.interval = null;
     this.logIntervalMinutes = 5;
+    this.playerUpdateEventQueue = new PlayerUpdateQueue(400);
     this.isInitialized = false;
     this.serverInstance = null;
     this.playerCache = new Map();
@@ -13,6 +80,7 @@ class DBLog {
   }
 
   async prepareToMount(serverInstance) {
+    logger.verbose(`[${this.name}] Preparing to mount...`);
     await this.cleanup();
     this.serverInstance = serverInstance;
 
@@ -32,18 +100,31 @@ class DBLog {
       const pluginConfig = this.config.plugins.find(
         (plugin) => plugin.plugin === "DBLog"
       );
-      if (
-        pluginConfig &&
-        typeof pluginConfig.interval === "number" &&
-        pluginConfig.interval > 0
-      ) {
-        this.logIntervalMinutes = pluginConfig.interval;
+      if (pluginConfig) {
+        // Check if interval is defined, is a number, and is positive
+        if (
+          pluginConfig.interval !== undefined &&
+          typeof pluginConfig.interval === "number" &&
+          pluginConfig.interval > 0
+        ) {
+          this.logIntervalMinutes = pluginConfig.interval;
+          logger.verbose(`[${this.name}] Set log interval to ${this.logIntervalMinutes} minutes from config.`);
+        } else {
+          logger.verbose(`[${this.name}] Using default log interval of ${this.logIntervalMinutes} minutes.`);
+        }
       }
 
       await this.setupSchema();
       await this.migrateSchema();
+      await this.migrateToUTF8MB4();
       this.startLogging();
+
+      // We also want to listen for playerUpdate events
+      this.serverInstance.removeListener("playerUpdate", this.handlePlayerUpdate);
+      this.serverInstance.on("playerUpdate", this.handlePlayerUpdate.bind(this));
+
       this.isInitialized = true;
+      logger.info(`[${this.name}] Initialized: Listening to playerJoined events and logging players every ${this.logIntervalMinutes} minutes.`);
     } catch (error) {
       logger.error(`Error initializing DBLog: ${error.message}`);
     }
@@ -51,76 +132,96 @@ class DBLog {
 
   async setupSchema() {
     const createTableQuery = `
-    CREATE TABLE IF NOT EXISTS players (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      playerName VARCHAR(255) NULL,
-      playerIP VARCHAR(255) NULL,
-      playerUID VARCHAR(255) NOT NULL UNIQUE,
-      beGUID VARCHAR(255) NULL,
-      steamID VARCHAR(255) NULL,
-      device VARCHAR(50) NULL,
-      created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-  `;
+      CREATE TABLE IF NOT EXISTS players (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        playerName VARCHAR(255) NULL,
+        playerIP VARCHAR(255) NULL,
+        playerUID VARCHAR(255) NOT NULL UNIQUE,
+        beGUID VARCHAR(255) NULL,
+        steamID VARCHAR(255) NULL,
+        device VARCHAR(50) NULL,
+        lastSeen TIMESTAMP NULL
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+      `;
 
-    try {
-      const connection = await process.mysqlPool.getConnection();
-      await connection.query(createTableQuery);
-      connection.release();
-    } catch (error) {
-      throw error;
-    }
+    const connection = await process.mysqlPool.getConnection();
+    await connection.query(createTableQuery);
+    connection.release();
   }
 
   async migrateSchema() {
     try {
       const connection = await process.mysqlPool.getConnection();
-
+      
       const [columns] = await connection.query(`
         SELECT COLUMN_NAME 
         FROM INFORMATION_SCHEMA.COLUMNS 
         WHERE TABLE_SCHEMA = DATABASE() 
         AND TABLE_NAME = 'players'
       `);
-
-      const columnNames = columns.map((col) => col.COLUMN_NAME);
+      
+      const columnNames = columns.map(col => col.COLUMN_NAME);
       const alterQueries = [];
-
-      if (!columnNames.includes("steamID")) {
-        alterQueries.push("ADD COLUMN steamID VARCHAR(255) NULL");
+      
+      if (!columnNames.includes('steamID')) {
+        alterQueries.push('ADD COLUMN steamID VARCHAR(255) NULL');
       }
-
-      if (!columnNames.includes("device")) {
-        alterQueries.push("ADD COLUMN device VARCHAR(50) NULL");
+      
+      if (!columnNames.includes('device')) {
+        alterQueries.push('ADD COLUMN device VARCHAR(50) NULL');
       }
-
+      
+      // Add an updated datetime column if it doesn't exist
+      if (!columnNames.includes('lastSeen')) {
+        alterQueries.push('ADD COLUMN lastSeen TIMESTAMP NULL');
+      }
+      
       if (alterQueries.length > 0) {
-        const alterQuery = `ALTER TABLE players ${alterQueries.join(", ")}`;
+        const alterQuery = `ALTER TABLE players ${alterQueries.join(', ')}`;
         await connection.query(alterQuery);
-        logger.info(
-          `DBLog: Migrated players table with new columns: ${alterQueries.join(
-            ", "
-          )}`
-        );
+        
+        logger.info(`DBLog: Migrated players table with new columns: ${alterQueries.join(', ')}`);
       }
 
-      const [tableResult] = await connection.query(`
-      SELECT TABLE_COLLATION 
-      FROM information_schema.TABLES 
-      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'players'
-    `);
-
-      if (
-        tableResult.length > 0 &&
-        !tableResult[0].TABLE_COLLATION.startsWith("utf8mb4")
-      ) {
-        logger.info(`DBLog: Migrating players table to utf8mb4...`);
-        await connection.query(`
-        ALTER TABLE players CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      // Also check the keys
+      const [indexes] = await connection.query(`
+        SELECT INDEX_NAME
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'players'
+        AND COLUMN_NAME = 'beGUID'
+        AND NON_UNIQUE = 0
       `);
-      }
 
+      // If there is no key on beGUID, add it
+      if (indexes.length === 0) {
+        await connection.query(`
+          ALTER TABLE players ADD UNIQUE INDEX beGUID (beGUID)
+        `);
+        logger.info(`Added index on beGUID to players`);
+      }
+      
       connection.release();
+    } catch (error) {
+      logger.error(`Error migrating schema: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async migrateToUTF8MB4() {
+    try {
+      // First query to check if the table is already utf8mb4
+      const [result] = await process.mysqlPool.query(`
+        SELECT TABLE_COLLATION 
+        FROM information_schema.TABLES 
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'players'
+      `);
+      if (result.length > 0 && !result[0].TABLE_COLLATION.startsWith("utf8mb4")) {
+        await process.mysqlPool.query(`
+          ALTER TABLE players CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+        `);
+        logger.info(`DBLog: Converted players table to utf8mb4`);
+      }
     } catch (error) {
       logger.error(`Error migrating schema: ${error.message}`);
       throw error;
@@ -129,120 +230,125 @@ class DBLog {
 
   startLogging() {
     const intervalMs = this.logIntervalMinutes * 60 * 1000;
-    this.logPlayers();
-    this.interval = setInterval(() => this.logPlayers(), intervalMs);
+    this.interval = setInterval(() => this.logPlayersOnInterval(), intervalMs);
+    
+    // Also periodically flush the queue even if not full
+    // this.queueFlushInterval = setInterval(() => this.flushPlayerUpdateQueue(), 30000); // Every 30 seconds
+  }
+  
+  async flushPlayerUpdateQueue() {
+    try {
+      if (!this.isInitialized) return;
+      
+      const isEmpty = await this.playerUpdateEventQueue.isEmpty();
+      if (isEmpty) return;
+      
+      // logger.verbose(`[${this.name}] Flushing player update queue.`);
+      const players = await this.playerUpdateEventQueue.dequeueAll();
+      await this.batchProcessPlayers(players);
+    } catch (error) {
+      logger.error(`[${this.name}] Error flushing player update queue: ${error.message}`);
+    }
   }
 
-  async logPlayers() {
+  async logPlayersOnInterval() {
     const players = this.serverInstance.players;
-
-    if (!Array.isArray(players) || players.length === 0) {
-      return;
-    }
-
-    for (const player of players) {
-      await this.processPlayer(player);
+    try {
+      await this.batchProcessPlayers(players);
+    } catch (error) {
+      logger.error(`[${this.name}] Error processing players: ${error.message}`);
     }
   }
 
-  async processPlayer(player) {
-    if (!player.uid) {
+  async handlePlayerUpdate(data) {
+    if (!this.isInitialized || !data || !data.uid) {
       return;
     }
 
     try {
-      if (player.device === "Console" && player.steamID) {
-        logger.warn(
-          `Unexpected: Console player ${player.name} has a steamID: ${player.steamID}. This shouldn't happen.`
-        );
+      // Add to the async-safe queue
+      const isFull = await this.playerUpdateEventQueue.enqueue(data);
+
+      if (isFull) {
+        // If queue is full, process all items
+        // logger.verbose(`[${this.name}] Player update event queue reached max size. Processing batch.`);
+        const players = await this.playerUpdateEventQueue.dequeueAll();
+        await this.batchProcessPlayers(players);
+      }
+    } catch (error) {
+      logger.error(`[${this.name}] Error handling player update: ${error.message}`);
+    }
+  }
+
+  // Make a new method which does batch processing of players
+  async batchProcessPlayers(players) {
+    // Prepare the batch insert query with multiple value sets
+    const baseSql = `
+      INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device, lastSeen)
+      VALUES
+    `;
+
+    const connection = await process.mysqlPool.getConnection();
+    // start a transaction
+    try {
+      const validPlayers = players.filter(player => player && player.uid);
+      if (validPlayers.length === 0) {
+        return;
       }
 
-      if (this.playerCache.has(player.uid)) {
-        const cachedPlayer = this.playerCache.get(player.uid);
+      await connection.beginTransaction();
 
-        if (
-          cachedPlayer.name === player.name &&
-          cachedPlayer.ip === player.ip &&
-          cachedPlayer.beGUID === player.beGUID &&
-          cachedPlayer.steamID === player.steamID &&
-          cachedPlayer.device === player.device
-        ) {
-          return;
-        }
-      }
+      // Prepare values and parameters for the batch query
+      const valuePlaceholders = [];
+      const params = [];
 
-      const [rows] = await process.mysqlPool.query(
-        "SELECT * FROM players WHERE playerUID = ?",
-        [player.uid]
-      );
+      for (const player of validPlayers) {
+        const timestamp = player.time ? new Date(player.time) : new Date();
 
-      if (rows.length > 0) {
-        const dbPlayer = rows[0];
-        let needsUpdate = false;
-        const updateFields = {};
+        // Add one set of value placeholders for each player
+        valuePlaceholders.push('(?, ?, ?, ?, ?, ?, ?)');
 
-        if (dbPlayer.playerName !== player.name) {
-          updateFields.playerName = player.name || null;
-          needsUpdate = true;
-        }
-        if (player.ip && dbPlayer.playerIP !== player.ip) {
-          updateFields.playerIP = player.ip;
-          needsUpdate = true;
-        }
-        if (player.beGUID && dbPlayer.beGUID !== player.beGUID) {
-          updateFields.beGUID = player.beGUID;
-          needsUpdate = true;
-        }
-        if (
-          player.steamID !== undefined &&
-          dbPlayer.steamID !== player.steamID
-        ) {
-          updateFields.steamID = player.steamID;
-          needsUpdate = true;
-        }
-        if (player.device !== undefined && dbPlayer.device !== player.device) {
-          updateFields.device = player.device;
-          needsUpdate = true;
-        }
-
-        if (needsUpdate) {
-          const setClause = Object.keys(updateFields)
-            .map((field) => `${field} = ?`)
-            .join(", ");
-          const values = Object.values(updateFields);
-          values.push(player.uid);
-
-          const updateQuery = `UPDATE players SET ${setClause} WHERE playerUID = ?`;
-          await process.mysqlPool.query(updateQuery, values);
-        }
-      } else {
-        const insertQuery = `
-          INSERT INTO players (playerName, playerIP, playerUID, beGUID, steamID, device)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `;
-        await process.mysqlPool.query(insertQuery, [
+        // Add all parameters for this player
+        params.push(
           player.name || null,
           player.ip || null,
           player.uid,
           player.beGUID || null,
           player.steamID !== undefined ? player.steamID : null,
           player.device || null,
-        ]);
+          timestamp
+        );
       }
 
-      this.playerCache.set(player.uid, {
-        name: player.name,
-        ip: player.ip,
-        beGUID: player.beGUID,
-        steamID: player.steamID,
-        device: player.device,
-      });
+      // Combine the base SQL with the placeholders and ON DUPLICATE KEY UPDATE clause
+      // But also prevent empty values for beGUID and steamID when we have an existing value
+      // Also, only update lastSeen if the new timestamp is greater than or equal to the existing one
+      const fullSql = `
+        ${baseSql} ${valuePlaceholders.join(', ')}
+        ON DUPLICATE KEY UPDATE
+          playerName = VALUES(playerName),
+          playerIP = COALESCE(NULLIF(VALUES(playerIP), ''), playerIP),
+          beGUID = COALESCE(NULLIF(VALUES(beGUID), ''), beGUID),
+          steamID = COALESCE(NULLIF(VALUES(steamID), ''), steamID),
+          device = COALESCE(NULLIF(VALUES(device), ''), device),
+          lastSeen = IF(VALUES(lastSeen) >= lastSeen OR lastSeen IS NULL, VALUES(lastSeen), lastSeen)
+      `;
 
-      setTimeout(() => {
-        this.playerCache.delete(player.uid);
-      }, this.cacheTTL);
+      // Execute the batch query
+      await connection.query(fullSql, params);
+      await connection.commit();
+
+      logger.info(`[${this.name}] Batch processed ${validPlayers.length} players.`);
     } catch (error) {
-      logger.error(`Error processing player ${player.name}: ${error.message}`);
+      logger.error(`Error batch processing players: ${error.message}`);
+      // Rollback the transaction if there was an error
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        logger.error(`Error rolling back transaction: ${rollbackError.message}`);
+      }
+    } finally {
+      connection.release();
     }
   }
 
@@ -251,6 +357,24 @@ class DBLog {
       clearInterval(this.interval);
       this.interval = null;
     }
+    
+    if (this.queueFlushInterval) {
+      clearInterval(this.queueFlushInterval);
+      this.queueFlushInterval = null;
+    }
+    
+    // Flush any remaining items in the queue before cleanup
+    try {
+      const isEmpty = await this.playerUpdateEventQueue.isEmpty();
+      if (!isEmpty) {
+        logger.info(`[${this.name}] Flushing remaining items in queue during cleanup.`);
+        const players = await this.playerUpdateEventQueue.dequeueAll();
+        await this.batchProcessPlayers(players);
+      }
+    } catch (error) {
+      logger.error(`[${this.name}] Error flushing queue during cleanup: ${error.message}`);
+    }
+    
     this.playerCache.clear();
   }
 }

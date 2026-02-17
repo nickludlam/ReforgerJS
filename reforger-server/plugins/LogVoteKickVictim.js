@@ -62,10 +62,18 @@ class LogVoteKickVictim {
       }
 
       this.serverInstance.on("voteKickVictim", this.handleVoteKickVictim.bind(this));
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error initializing LogVoteKickVictim plugin: ${error.message}`);
+    }
   }
 
   async handleVoteKickVictim(data) {
+    // If it's more than 60 seconds old, ignore it
+    if (data.time && isNaN(data.time.getTime()) || Date.now() - data.time.getTime() > 60000) {
+      return;
+    }
+
+    // Use new properties, with fallbacks if missing
     const voteVictimName = data?.voteVictimName || "Missing Value";
     const voteVictimId = data?.voteVictimId || "Missing Id";
 
@@ -78,12 +86,14 @@ class LogVoteKickVictim {
       )
       .setColor("#FFA500")
       .setFooter({
-        text: "VoteKickVictim plugin - ReforgerJS",
+        text: "EXD ReforgerJS customised by Bewilderbeest",
       });
 
     try {
       await this.channelOrThread.send({ embeds: [embed] });
-    } catch (error) {}
+    } catch (error) {
+      logger.error(`Error sending vote kick victim message: ${error.message}`);
+    }
   }
 
   async cleanup() {
