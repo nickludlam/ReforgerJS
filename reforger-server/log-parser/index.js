@@ -3,6 +3,7 @@ const async = require('async');
 const TailLogReader = require('./log-readers/tail');
 const SFTPLogReader = require('./log-readers/sftp');
 const FTPLogReader = require('./log-readers/ftp');
+const SSHLogReader = require('./log-readers/ssh');
 const logger = global.logger || console;
 
 class LogParser extends EventEmitter {
@@ -39,6 +40,9 @@ class LogParser extends EventEmitter {
         break;
       case 'ftp':
         this.logReader = new FTPLogReader(this.queue.push.bind(this.queue), options);
+        break;
+      case 'ssh':
+        this.logReader = new SSHLogReader(this.queue.push.bind(this.queue), options);
         break;
       default:
         throw new Error('Invalid logReader mode.');
